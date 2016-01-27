@@ -12,7 +12,7 @@ module.exports = GeoJSONSource;
  * Create a GeoJSON data source instance given an options object
  * @class GeoJSONSource
  * @param {Object} [options]
- * @param {Object|string} options.data A GeoJSON data object or URL to it. The latter is preferable in case of large GeoJSON files.
+ * @param {Object|string} options.data A GeoJSON data object (which may be JSON.stringified) or URL to it. The latter is preferable in case of large GeoJSON files.
  * @param {number} [options.maxzoom=14] Maximum zoom to preserve detail at.
  * @param {number} [options.buffer] Tile buffer on each side.
  * @param {number} [options.tolerance] Simplification tolerance (higher means simpler).
@@ -129,7 +129,7 @@ GeoJSONSource.prototype = util.inherit(Evented, /** @lends GeoJSONSource.prototy
     _updateData: function() {
         this._dirty = false;
         var data = this._data;
-        if (typeof data === 'string' && typeof window != 'undefined') {
+        if (typeof data === 'string' && typeof window != 'undefined' && data.charAt(0) !== '{') {
             data = urlResolve(window.location.href, data);
         }
         this.workerID = this.dispatcher.send('parse geojson', {
