@@ -3,8 +3,10 @@
 var util = require('../util/util');
 var StyleTransition = require('./style_transition');
 var StyleDeclaration = require('./style_declaration');
-var StyleSpecification = require('./reference');
+var styleSpec = require('./style_spec');
+var validateStyle = require('./validate_style');
 var parseColor = require('./parse_color');
+var Evented = require('../util/evented');
 
 module.exports = StyleLayer;
 
@@ -34,39 +36,49 @@ function StyleLayer(layer, refLayer) {
     this.filter = (refLayer || layer).filter;
     this.interactive = (refLayer || layer).interactive;
 
-    this._paintSpecifications = StyleSpecification['paint_' + this.type];
-    this._layoutSpecifications = StyleSpecification['layout_' + this.type];
+    this._paintSpecifications = styleSpec['paint_' + this.type];
+    this._layoutSpecifications = styleSpec['layout_' + this.type];
+
+    this._paintTransitions = {}; // {[propertyName]: StyleTransition}
+    this._paintTransitionOptions = {}; // {[className]: {[propertyName]: { duration:Number, delay:Number }}}
+    this._paintDeclarations = {}; // {[className]: {[propertyName]: StyleDeclaration}}
+    this._layoutDeclarations = {}; // {[propertyName]: StyleDeclaration}
 
     // Resolve paint declarations
-    this._paintDeclarations = {};
-    this._paintTransitions = {};
     for (var key in layer) {
         var match = key.match(/^paint(?:\.(.*))?$/);
         if (match) {
             var klass = match[1] || '';
-            for (var name in layer[key]) {
-                this.setPaintProperty(name, layer[key][name], klass);
+            for (var paintName in layer[key]) {
+                this.setPaintProperty(paintName, layer[key][paintName], klass);
             }
         }
     }
 
     // Resolve layout declarations
-    this._layoutDeclarations = {};
     if (this.ref) {
         this._layoutDeclarations = refLayer._layoutDeclarations;
     } else {
-        for (name in layer.layout) {
-            this.setLayoutProperty(name, layer.layout[name]);
+        for (var layoutName in layer.layout) {
+            this.setLayoutProperty(layoutName, layer.layout[layoutName]);
         }
     }
 }
 
-StyleLayer.prototype = {
+StyleLayer.prototype = util.inherit(Evented, {
 
     setLayoutProperty: function(name, value) {
+
         if (value == null) {
             delete this._layoutDeclarations[name];
         } else {
+            if (validateStyle.emitErrors(this, validateStyle.layoutProperty({
+                key: 'layers.' + this.id + '.layout.' + name,
+                layerType: this.type,
+                objectKey: name,
+                value: value,
+                styleSpec: styleSpec
+            }))) return;
             this._layoutDeclarations[name] = new StyleDeclaration(this._layoutSpecifications[name], value);
         }
     },
@@ -90,22 +102,38 @@ StyleLayer.prototype = {
     },
 
     setPaintProperty: function(name, value, klass) {
+        var validateStyleKey = 'layers.' + this.id + (klass ? '["paint.' + klass + '"].' : '.paint.') + name;
+
         if (util.endsWith(name, TRANSITION_SUFFIX)) {
-            if (!this._paintTransitions[klass || '']) {
-                this._paintTransitions[klass || ''] = {};
+            if (!this._paintTransitionOptions[klass || '']) {
+                this._paintTransitionOptions[klass || ''] = {};
             }
-            if (value == null) {
-                delete this._paintTransitions[klass || ''][name];
+            if (value === null || value === undefined) {
+                delete this._paintTransitionOptions[klass || ''][name];
             } else {
-                this._paintTransitions[klass || ''][name] = value;
+                if (validateStyle.emitErrors(this, validateStyle.paintProperty({
+                    key: validateStyleKey,
+                    layerType: this.type,
+                    objectKey: name,
+                    value: value,
+                    styleSpec: styleSpec
+                }))) return;
+                this._paintTransitionOptions[klass || ''][name] = value;
             }
         } else {
             if (!this._paintDeclarations[klass || '']) {
                 this._paintDeclarations[klass || ''] = {};
             }
-            if (value == null) {
+            if (value === null || value === undefined) {
                 delete this._paintDeclarations[klass || ''][name];
             } else {
+                if (validateStyle.emitErrors(this, validateStyle.paintProperty({
+                    key: validateStyleKey,
+                    layerType: this.type,
+                    objectKey: name,
+                    value: value,
+                    styleSpec: styleSpec
+                }))) return;
                 this._paintDeclarations[klass || ''][name] = new StyleDeclaration(this._paintSpecifications[name], value);
             }
         }
@@ -115,8 +143,8 @@ StyleLayer.prototype = {
         klass = klass || '';
         if (util.endsWith(name, TRANSITION_SUFFIX)) {
             return (
-                this._paintTransitions[klass] &&
-                this._paintTransitions[klass][name]
+                this._paintTransitionOptions[klass] &&
+                this._paintTransitionOptions[klass][name]
             );
         } else {
             return (
@@ -154,30 +182,47 @@ StyleLayer.prototype = {
 
     // update classes
     cascade: function(classes, options, globalTransitionOptions, animationLoop) {
+        var oldTransitions = this._paintTransitions;
+        var newTransitions = this._paintTransitions = {};
+        var that = this;
+
+        // Apply new declarations in all active classes
         for (var klass in this._paintDeclarations) {
             if (klass !== "" && !classes[klass]) continue;
-
             for (var name in this._paintDeclarations[klass]) {
-                var declaration = this._paintDeclarations[klass][name];
-                var oldTransition = options.transition ? this._paintTransitions[name] : undefined;
+                applyDeclaration(name, this._paintDeclarations[klass][name]);
+            }
+        }
 
-                // Only create a new transition if the declaration changed
-                if (!oldTransition || oldTransition.declaration.json !== declaration.json) {
-                    var newTransition = this._paintTransitions[name] = new StyleTransition(declaration, oldTransition, util.extend(
-                        {duration: 300, delay: 0},
-                        globalTransitionOptions,
-                        this.getPaintProperty(name + TRANSITION_SUFFIX)
-                    ));
+        // Apply removed declarations
+        var removedNames = util.keysDifference(oldTransitions, newTransitions);
+        for (var i = 0; i < removedNames.length; i++) {
+            var spec = this._paintSpecifications[removedNames[i]];
+            applyDeclaration(removedNames[i], new StyleDeclaration(spec, spec.default));
+        }
 
-                    // Run the animation loop until the end of the transition
-                    if (!newTransition.instant()) {
-                        newTransition.loopID = animationLoop.set(newTransition.endTime - (new Date()).getTime());
-                    }
+        function applyDeclaration(name, declaration) {
+            var oldTransition = options.transition ? oldTransitions[name] : undefined;
 
-                    if (oldTransition) {
-                        animationLoop.cancel(oldTransition.loopID);
-                    }
+            if (oldTransition && oldTransition.declaration.json === declaration.json) {
+                newTransitions[name] = oldTransition;
+
+            } else {
+                var newTransition = new StyleTransition(declaration, oldTransition, util.extend(
+                    {duration: 300, delay: 0},
+                    globalTransitionOptions,
+                    that.getPaintProperty(name + TRANSITION_SUFFIX)
+                ));
+
+                if (!newTransition.instant()) {
+                    newTransition.loopID = animationLoop.set(newTransition.endTime - (new Date()).getTime());
                 }
+
+                if (oldTransition) {
+                    animationLoop.cancel(oldTransition.loopID);
+                }
+
+                newTransitions[name] = newTransition;
             }
         }
     },
@@ -185,39 +230,46 @@ StyleLayer.prototype = {
     // update zoom
     recalculate: function(zoom, zoomHistory) {
         this.paint = {};
-        for (var name in this._paintSpecifications) {
-            this.paint[name] = this.getPaintValue(name, zoom, zoomHistory);
+        for (var paintName in this._paintSpecifications) {
+            this.paint[paintName] = this.getPaintValue(paintName, zoom, zoomHistory);
         }
 
         this.layout = {};
-        for (name in this._layoutSpecifications) {
-            this.layout[name] = this.getLayoutValue(name, zoom, zoomHistory);
+        for (var layoutName in this._layoutSpecifications) {
+            this.layout[layoutName] = this.getLayoutValue(layoutName, zoom, zoomHistory);
         }
     },
 
-    serialize: function() {
+    serialize: function(options) {
         var output = {
             'id': this.id,
             'ref': this.ref,
             'metadata': this.metadata,
-            'type': this.type,
-            'source': this.source,
-            'source-layer': this.sourceLayer,
             'minzoom': this.minzoom,
             'maxzoom': this.maxzoom,
-            'filter': this.filter,
-            'interactive': this.interactive,
-            'layout': util.mapObject(this._layoutDeclarations, getDeclarationValue)
+            'interactive': this.interactive
         };
 
         for (var klass in this._paintDeclarations) {
-            var key = klass === '' ? 'paint' : 'paint.' + key;
+            var key = klass === '' ? 'paint' : 'paint.' + klass;
             output[key] = util.mapObject(this._paintDeclarations[klass], getDeclarationValue);
         }
 
-        return output;
+        if (!this.ref || (options && options.includeRefProperties)) {
+            util.extend(output, {
+                'type': this.type,
+                'source': this.source,
+                'source-layer': this.sourceLayer,
+                'filter': this.filter,
+                'layout': util.mapObject(this._layoutDeclarations, getDeclarationValue)
+            });
+        }
+
+        return util.filterObject(output, function(value, key) {
+            return value !== undefined && !(key === 'layout' && !Object.keys(value).length);
+        });
     }
-};
+});
 
 function getDeclarationValue(declaration) {
     return declaration.value;

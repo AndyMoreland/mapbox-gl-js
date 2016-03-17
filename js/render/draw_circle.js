@@ -35,23 +35,24 @@ function drawCircles(painter, source, layer, coords) {
         var coord = coords[i];
 
         var tile = source.getTile(coord);
-        if (!tile.buffers) continue;
-        var elementGroups = tile.getElementGroups(layer, 'circle');
+        var bucket = tile.getBucket(layer);
+        if (!bucket) continue;
+        var elementGroups = bucket.elementGroups.circle;
         if (!elementGroups) continue;
 
-        var vertex = tile.buffers.circleVertex;
-        var elements = tile.buffers.circleElement;
+        var vertex = bucket.buffers.circleVertex;
+        var elements = bucket.buffers.circleElement;
 
         gl.setPosMatrix(painter.translatePosMatrix(
-            painter.calculatePosMatrix(coord, tile.tileExtent, source.maxzoom),
+            painter.calculatePosMatrix(coord, source.maxzoom),
             tile,
             layer.paint['circle-translate'],
             layer.paint['circle-translate-anchor']
         ));
         gl.setExMatrix(painter.transform.exMatrix);
 
-        for (var k = 0; k < elementGroups.groups.length; k++) {
-            var group = elementGroups.groups[k];
+        for (var k = 0; k < elementGroups.length; k++) {
+            var group = elementGroups[k];
             var offset = group.vertexStartIndex * vertex.itemSize;
 
             vertex.bind(gl);
@@ -64,6 +65,4 @@ function drawCircles(painter, source, layer, coords) {
             gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, elementOffset);
         }
     }
-
-    gl.enable(gl.STENCIL_TEST);
 }

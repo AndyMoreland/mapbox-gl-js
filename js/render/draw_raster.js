@@ -12,7 +12,7 @@ function drawRaster(painter, source, layer, coords) {
     // Change depth function to prevent double drawing in areas where tiles overlap.
     gl.depthFunc(gl.LESS);
 
-    for (var i = coords.length - 1; i >= 0; i--) {
+    for (var i = 0; i < coords.length; i++) {
         drawRasterTile(painter, source, layer, coords[i]);
     }
 
@@ -28,7 +28,7 @@ function drawRasterTile(painter, source, layer, coord) {
     gl.disable(gl.STENCIL_TEST);
 
     var tile = source.getTile(coord);
-    var posMatrix = painter.calculatePosMatrix(coord, tile.tileExtent, source.maxzoom);
+    var posMatrix = painter.calculatePosMatrix(coord, source.maxzoom);
 
     var shader = painter.rasterShader;
     gl.switchShader(shader, posMatrix);
@@ -72,8 +72,6 @@ function drawRasterTile(painter, source, layer, coord) {
     gl.vertexAttribPointer(shader.a_pos,         2, gl.SHORT, false, 8, 0);
     gl.vertexAttribPointer(shader.a_texture_pos, 2, gl.SHORT, false, 8, 4);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-    gl.enable(gl.STENCIL_TEST);
 }
 
 function spinWeights(angle) {

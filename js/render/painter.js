@@ -5,7 +5,7 @@ var browser = require('../util/browser');
 var mat4 = require('gl-matrix').mat4;
 var FrameHistory = require('./frame_history');
 var TileCoord = require('../source/tile_coord');
-var assert = require('assert');
+var EXTENT = require('../data/bucket').EXTENT;
 
 /*
  * Initialize a new painter object.
@@ -87,10 +87,6 @@ Painter.prototype.setup = function() {
         ['a_pos', 'a_data'],
         ['u_matrix', 'u_linewidth', 'u_color', 'u_ratio', 'u_blur', 'u_patternscale_a', 'u_tex_y_a', 'u_patternscale_b', 'u_tex_y_b', 'u_image', 'u_sdfgamma', 'u_mix', 'u_extra', 'u_antialiasingmatrix', 'u_offset']);
 
-    this.dotShader = gl.initializeShader('dot',
-        ['a_pos'],
-        ['u_matrix', 'u_size', 'u_color', 'u_blur']);
-
     this.sdfShader = gl.initializeShader('sdf',
         ['a_pos', 'a_offset', 'a_data1', 'a_data2'],
         ['u_matrix', 'u_exmatrix', 'u_texture', 'u_texsize', 'u_color', 'u_gamma', 'u_buffer', 'u_zoom', 'u_fadedist', 'u_minfadezoom', 'u_maxfadezoom', 'u_fadezoom', 'u_skewed', 'u_extra']);
@@ -128,29 +124,6 @@ Painter.prototype.setup = function() {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.backgroundBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Int16Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
-    this.setExtent(4096);
-
-    // The debugTextBuffer is used to draw tile IDs for debugging
-    this.debugTextBuffer = gl.createBuffer();
-    this.debugTextBuffer.itemSize = 2;
-};
-
-/**
- * Rebind the necessary buffers to render at a different extent than
- * the current one. No-ops if the extent is not changing.
- *
- * @param {number} newExtent
- * @example
- * this.setExtent(4096);
- * @private
- */
-Painter.prototype.setExtent = function(newExtent) {
-    if (!newExtent || newExtent === this.tileExtent) return;
-
-    this.tileExtent = newExtent;
-
-    var gl = this.gl;
-
     // The tileExtentBuffer is used when drawing to a full *tile*
     this.tileExtentBuffer = gl.createBuffer();
     this.tileExtentBuffer.itemSize = 4;
@@ -161,9 +134,9 @@ Painter.prototype.setExtent = function(newExtent) {
         new Int16Array([
             // tile coord x, tile coord y, texture coord x, texture coord y
             0, 0, 0, 0,
-            this.tileExtent, 0, 32767, 0,
-            0, this.tileExtent, 0, 32767,
-            this.tileExtent, this.tileExtent,  32767, 32767
+            EXTENT, 0, 32767, 0,
+            0, EXTENT, 0, 32767,
+            EXTENT, EXTENT,  32767, 32767
         ]),
         gl.STATIC_DRAW);
 
@@ -175,8 +148,12 @@ Painter.prototype.setExtent = function(newExtent) {
     gl.bufferData(
         gl.ARRAY_BUFFER,
         new Int16Array([
-            0, 0, this.tileExtent - 1, 0, this.tileExtent - 1, this.tileExtent - 1, 0, this.tileExtent - 1, 0, 0]),
+            0, 0, EXTENT, 0, EXTENT, EXTENT, 0, EXTENT, 0, 0]),
         gl.STATIC_DRAW);
+
+    // The debugTextBuffer is used to draw tile IDs for debugging
+    this.debugTextBuffer = gl.createBuffer();
+    this.debugTextBuffer.itemSize = 2;
 };
 
 /*
@@ -211,6 +188,7 @@ Painter.prototype._renderTileClippingMasks = function(coords, sourceMaxZoom) {
     gl.colorMask(false, false, false, false);
     this.depthMask(false);
     gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.STENCIL_TEST);
 
     // Only write clipping IDs to the last 5 bits. The first three are used for drawing fills.
     gl.stencilMask(0xF8);
@@ -225,7 +203,7 @@ Painter.prototype._renderTileClippingMasks = function(coords, sourceMaxZoom) {
 
         gl.stencilFunc(gl.ALWAYS, id, 0xF8);
 
-        gl.switchShader(this.fillShader, this.calculatePosMatrix(coord, this.tileExtent, sourceMaxZoom));
+        gl.switchShader(this.fillShader, this.calculatePosMatrix(coord, sourceMaxZoom));
 
         // Draw the clipping mask
         gl.bindBuffer(gl.ARRAY_BUFFER, this.tileExtentBuffer);
@@ -318,7 +296,9 @@ Painter.prototype.renderPass = function(options) {
             this.renderLayer(this, source, layer, coords);
         }
 
-        draw.debug(this, coords);
+        if (source) {
+            draw.debug(this, source, coords);
+        }
     }
 };
 
@@ -369,10 +349,9 @@ Painter.prototype.translatePosMatrix = function(matrix, tile, translate, anchor)
         ];
     }
 
-    var tilePixelRatio = this.transform.scale / (1 << tile.coord.z) / (tile.tileExtent / tile.tileSize);
     var translation = [
-        translate[0] / tilePixelRatio,
-        translate[1] / tilePixelRatio,
+        tile.pixelsToTileUnits(translate[0], this.transform.zoom),
+        tile.pixelsToTileUnits(translate[1], this.transform.zoom),
         0
     ];
 
@@ -387,8 +366,7 @@ Painter.prototype.translatePosMatrix = function(matrix, tile, translate, anchor)
  * @param {Object} transform
  * @private
  */
-Painter.prototype.calculatePosMatrix = function(coord, tileExtent, maxZoom) {
-    assert(tileExtent);
+Painter.prototype.calculatePosMatrix = function(coord, maxZoom) {
 
     if (coord instanceof TileCoord) {
         coord = coord.toCoordinate();
@@ -413,7 +391,7 @@ Painter.prototype.calculatePosMatrix = function(coord, tileExtent, maxZoom) {
 
     mat4.identity(posMatrix);
     mat4.translate(posMatrix, posMatrix, [x * scale, y * scale, 0]);
-    mat4.scale(posMatrix, posMatrix, [ scale / tileExtent, scale / tileExtent, 1 ]);
+    mat4.scale(posMatrix, posMatrix, [ scale / EXTENT, scale / EXTENT, 1 ]);
     mat4.multiply(posMatrix, transform.projMatrix, posMatrix);
 
     return new Float32Array(posMatrix);

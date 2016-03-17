@@ -32,6 +32,21 @@ test('Map', function(t) {
         t.end();
     });
 
+    t.test('emits load event after a style is set', function(t) {
+        var map = createMap();
+
+        map.on('load', fail);
+
+        setTimeout(function() {
+            map.off('load', fail);
+            map.on('load', pass);
+            map.setStyle(createStyle());
+        }, 1);
+
+        function fail() { t.ok(false); }
+        function pass() { t.end(); }
+    });
+
     t.test('#setStyle', function(t) {
         t.test('returns self', function(t) {
             var map = createMap(),
@@ -78,6 +93,7 @@ test('Map', function(t) {
             map.off('style.error', map.onError);
             map.off('source.error', map.onError);
             map.off('tile.error', map.onError);
+            map.off('layer.error', map.onError);
 
             t.plan(10);
             map.setStyle(style); // Fires load
@@ -90,6 +106,7 @@ test('Map', function(t) {
             style.fire('tile.load');
             style.fire('tile.error');
             style.fire('tile.remove');
+            style.fire('layer.error');
         });
 
         t.test('can be called more than once', function(t) {
@@ -108,15 +125,7 @@ test('Map', function(t) {
             map.transform.resize(600, 400);
             t.equal(map.transform.zoom, 0.6983039737971012, 'map transform is constrained');
             t.ok(map.transform.unmodified, 'map transform is not modified');
-            map.setStyle({
-                version: 8,
-                center: [-73.9749, 40.7736],
-                zoom: 12.5,
-                bearing: 29,
-                pitch: 50,
-                sources: {},
-                layers: []
-            });
+            map.setStyle(createStyle());
             map.on('style.load', function () {
                 t.deepEqual(fixedLngLat(map.transform.center), fixedLngLat({ lng: -73.9749, lat: 40.7736 }));
                 t.equal(fixedNum(map.transform.zoom), 12.5);
@@ -129,15 +138,7 @@ test('Map', function(t) {
         t.test('style transform does not override map transform modified via options', function (t) {
             var map = createMap({zoom: 10, center: [-77.0186, 38.8888]});
             t.notOk(map.transform.unmodified, 'map transform is modified by options');
-            map.setStyle({
-                version: 8,
-                center: [-73.9749, 40.7736],
-                zoom: 12.5,
-                bearing: 29,
-                pitch: 50,
-                sources: {},
-                layers: []
-            });
+            map.setStyle(createStyle());
             map.on('style.load', function () {
                 t.deepEqual(fixedLngLat(map.transform.center), fixedLngLat({ lng: -77.0186, lat: 38.8888 }));
                 t.equal(fixedNum(map.transform.zoom), 10);
@@ -153,15 +154,7 @@ test('Map', function(t) {
             map.setZoom(10);
             map.setCenter([-77.0186, 38.8888]);
             t.notOk(map.transform.unmodified, 'map transform is modified via setters');
-            map.setStyle({
-                version: 8,
-                center: [-73.9749, 40.7736],
-                zoom: 12.5,
-                bearing: 29,
-                pitch: 50,
-                sources: {},
-                layers: []
-            });
+            map.setStyle(createStyle());
             map.on('style.load', function () {
                 t.deepEqual(fixedLngLat(map.transform.center), fixedLngLat({ lng: -77.0186, lat: 38.8888 }));
                 t.equal(fixedNum(map.transform.zoom), 10);
@@ -171,6 +164,73 @@ test('Map', function(t) {
             });
         });
 
+    });
+
+    t.test('#getStyle', function(t) {
+        function createStyle() {
+            return {
+                version: 8,
+                center: [-73.9749, 40.7736],
+                zoom: 12.5,
+                bearing: 29,
+                pitch: 50,
+                sources: {},
+                layers: []
+            };
+        }
+
+        function createStyleSource() {
+            return {
+                type: "geojson",
+                data: {
+                    type: "FeatureCollection",
+                    features: []
+                }
+            };
+        }
+
+        function createStyleLayer() {
+            return {
+                id: 'background',
+                type: 'background'
+            };
+        }
+
+        t.test('returns the style', function(t) {
+            var style = createStyle();
+            var map = createMap({style: style});
+
+            map.on('load', function () {
+                t.deepEqual(map.getStyle(), style);
+                t.end();
+            });
+        });
+
+        t.test('returns the style with added sources', function(t) {
+            var style = createStyle();
+            var map = createMap({style: style});
+
+            map.on('load', function () {
+                map.addSource('geojson', createStyleSource());
+                t.deepEqual(map.getStyle(), extend(createStyle(), {
+                    sources: {geojson: createStyleSource()}
+                }));
+                t.end();
+            });
+        });
+
+        t.test('returns the style with added layers', function(t) {
+            var style = createStyle();
+            var map = createMap({style: style});
+
+            map.on('load', function () {
+                map.addLayer(createStyleLayer());
+                t.deepEqual(map.getStyle(), extend(createStyle(), {
+                    layers: [createStyleLayer()]
+                }));
+                t.end();
+            });
+        });
     });
 
     t.test('#resize', function(t) {
@@ -206,10 +266,30 @@ test('Map', function(t) {
     });
 
     t.test('#getBounds', function(t) {
-        var map = createMap();
+        var map = createMap({ zoom: 0 });
         t.deepEqual(parseFloat(map.getBounds().getCenter().lng.toFixed(10)), 0, 'getBounds');
         t.deepEqual(parseFloat(map.getBounds().getCenter().lat.toFixed(10)), 0, 'getBounds');
+
+        t.deepEqual(toFixed(map.getBounds().toArray()), toFixed([
+            [ -70.31249999999976, -57.32652122521695 ],
+            [ 70.31249999999977, 57.326521225216965 ] ]));
+
+        t.test('rotated bounds', function(t) {
+            var map = createMap({ zoom: 1, bearing: 45 });
+            t.deepEqual(toFixed(map.getBounds().toArray()), toFixed([
+                [ -49.718445552178764, -44.44541580601936 ],
+                [ 49.71844555217925, 44.445415806019355 ] ]));
+            t.end();
+        });
         t.end();
+
+        function toFixed(bounds) {
+            var n = 10;
+            return [
+                [bounds[0][0].toFixed(n), bounds[0][1].toFixed(n)],
+                [bounds[1][0].toFixed(n), bounds[1][1].toFixed(n)]
+            ];
+        }
     });
 
     t.test('#remove', function(t) {
@@ -566,7 +646,7 @@ test('Map', function(t) {
 
             map.on('style.load', function () {
                 map.setPaintProperty('background', 'background-color', 'red');
-                t.deepEqual(map.getPaintProperty('background', 'background-color'), [1, 0, 0, 1]);
+                t.deepEqual(map.getPaintProperty('background', 'background-color'), 'red');
                 t.end();
             });
         });
@@ -608,3 +688,15 @@ test('Map', function(t) {
         });
     });
 });
+
+function createStyle() {
+    return {
+        version: 8,
+        center: [-73.9749, 40.7736],
+        zoom: 12.5,
+        bearing: 29,
+        pitch: 50,
+        sources: {},
+        layers: []
+    };
+}

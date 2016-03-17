@@ -3,8 +3,9 @@
 var Tile = require('./tile');
 var TileCoord = require('./tile_coord');
 var Point = require('point-geometry');
-var Cache = require('../util/mru_cache');
+var Cache = require('../util/lru_cache');
 var util = require('../util/util');
+var EXTENT = require('../data/bucket').EXTENT;
 
 module.exports = TilePyramid;
 
@@ -34,7 +35,7 @@ function TilePyramid(options) {
     this._redoPlacement = options.redoPlacement;
 
     this._tiles = {};
-    this._cache = new Cache(options.cacheSize, function(tile) { return this._unload(tile); }.bind(this));
+    this._cache = new Cache(0, function(tile) { return this._unload(tile); }.bind(this));
 
     this._filterRendered = this._filterRendered.bind(this);
 }
@@ -196,7 +197,29 @@ TilePyramid.prototype = {
                 retain[coord.id] = true;
                 return tile;
             }
+            if (this._cache.has(coord.id)) {
+                this.addTile(coord);
+                retain[coord.id] = true;
+                return this._tiles[coord.id];
+            }
         }
+    },
+
+    /**
+     * Resizes the tile cache based on the current viewport's size.
+     *
+     * Larger viewports use more tiles and need larger caches. Larger viewports
+     * are more likely to be found on devices with more memory and on pages where
+     * the map is more important.
+     *
+     * @private
+     */
+    updateCacheSize: function(transform) {
+        var widthInTiles = Math.ceil(transform.width / transform.tileSize) + 1;
+        var heightInTiles = Math.ceil(transform.height / transform.tileSize) + 1;
+        var approxTilesInView = widthInTiles * heightInTiles;
+        var commonZoomRange = 5;
+        this._cache.setMaxSize(Math.floor(approxTilesInView * commonZoomRange));
     },
 
     /**
@@ -208,6 +231,8 @@ TilePyramid.prototype = {
         var i;
         var coord;
         var tile;
+
+        this.updateCacheSize(transform);
 
         // Determine the overzooming/underzooming amounts.
         var zoom = (this.roundZoom ? Math.round : Math.floor)(this.getZoom(transform));
@@ -360,14 +385,15 @@ TilePyramid.prototype = {
         for (var i = 0; i < ids.length; i++) {
             var tile = this._tiles[ids[i]];
             var pos = tile.positionAt(coord);
-            if (pos && pos.x >= 0 && pos.x < tile.tileExtent && pos.y >= 0 && pos.y < tile.tileExtent) {
+            if (pos && pos.x >= 0 && pos.x < EXTENT && pos.y >= 0 && pos.y < EXTENT) {
                 // The click is within the viewport. There is only ever one tile in
                 // a layer that has this property.
                 return {
                     tile: tile,
                     x: pos.x,
                     y: pos.y,
-                    scale: this.transform.worldSize / Math.pow(2, tile.coord.z)
+                    scale: Math.pow(2, this.transform.zoom - tile.coord.z),
+                    tileSize: tile.tileSize
                 };
             }
         }
@@ -390,7 +416,7 @@ TilePyramid.prototype = {
                 tile.positionAt(bounds[0]),
                 tile.positionAt(bounds[1])
             ];
-            if (tileSpaceBounds[0].x < tile.tileExtent && tileSpaceBounds[0].y < tile.tileExtent &&
+            if (tileSpaceBounds[0].x < EXTENT && tileSpaceBounds[0].y < EXTENT &&
                 tileSpaceBounds[1].x >= 0 && tileSpaceBounds[1].y >= 0) {
                 result.push({
                     tile: tile,
@@ -407,5 +433,5 @@ TilePyramid.prototype = {
 };
 
 function compareKeyZoom(a, b) {
-    return (b % 32) - (a % 32);
+    return (a % 32) - (b % 32);
 }

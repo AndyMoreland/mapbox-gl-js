@@ -2,6 +2,25 @@
 
 var Canvas = require('./canvas');
 
+/*
+ * Unlike js/util/browser.js, this code is written with the expectation
+ * of a browser environment with a global 'window' object
+ */
+
+/**
+ * Provides a function that outputs milliseconds: either performance.now()
+ * or a fallback to Date.now()
+ * @private
+ */
+module.exports.now = (function() {
+    if (window.performance &&
+        window.performance.now) {
+        return window.performance.now.bind(window.performance);
+    } else {
+        return Date.now.bind(Date);
+    }
+}());
+
 var frame = window.requestAnimationFrame ||
     window.mozRequestAnimationFrame ||
     window.webkitRequestAnimationFrame ||
@@ -27,11 +46,11 @@ exports.timed = function (fn, dur, ctx) {
     }
 
     var abort = false,
-        start = window.performance ? window.performance.now() : Date.now();
+        start = module.exports.now();
 
     function tick(now) {
         if (abort) return;
-        if (!window.performance) now = Date.now();
+        now = module.exports.now();
 
         if (now >= start + dur) {
             fn.call(ctx, 1);
@@ -45,6 +64,8 @@ exports.timed = function (fn, dur, ctx) {
 
     return function() { abort = true; };
 };
+
+exports.supportsWebGL = {};
 
 /**
  * Test whether the basic JavaScript and DOM features required for Mapbox GL are present.
@@ -98,7 +119,13 @@ exports.supported = function(options) {
         },
 
         function() {
-            return new Canvas().supportsWebGLContext((options && options.failIfMajorPerformanceCaveat) || false);
+            var opt = (options && options.failIfMajorPerformanceCaveat) || false,
+                fimpc = 'fimpc_' + String(opt);
+            if (exports.supportsWebGL[fimpc] === undefined) {
+                var canvas = new Canvas();
+                exports.supportsWebGL[fimpc] = canvas.supportsWebGLContext(opt);
+            }
+            return exports.supportsWebGL[fimpc];
         },
 
         function() { return 'Worker' in window; }

@@ -16,57 +16,50 @@ function drawSymbols(painter, source, layer, coords) {
 
     var gl = painter.gl;
 
+    // Disable the stencil test so that labels aren't clipped to tile boundaries.
+    //
+    // Layers with features that may be drawn overlapping aren't clipped. These
+    // layers are sorted in the y direction, and to draw the correct ordering near
+    // tile edges the icons are included in both tiles and clipped when drawing.
     if (drawAcrossEdges) {
-        // Disable the stencil test so that labels aren't clipped to tile boundaries.
-        //
-        // Layers with features that may be drawn overlapping aren't clipped. These
-        // layers are sorted in the y direction, and to draw the correct ordering near
-        // tile edges the icons are included in both tiles and clipped when drawing.
         gl.disable(gl.STENCIL_TEST);
+    } else {
+        gl.enable(gl.STENCIL_TEST);
     }
 
     painter.setDepthSublayer(0);
     painter.depthMask(false);
     gl.disable(gl.DEPTH_TEST);
 
-    var tile, elementGroups, posMatrix;
+    var tile, elementGroups, bucket, posMatrix;
 
     for (var i = 0; i < coords.length; i++) {
         tile = source.getTile(coords[i]);
+        bucket = tile.getBucket(layer);
+        if (!bucket) continue;
+        elementGroups = bucket.elementGroups;
+        if (!elementGroups.icon.length) continue;
 
-        if (!tile.buffers) continue;
-        elementGroups = tile.elementGroups[layer.ref || layer.id];
-        if (!elementGroups) continue;
-        if (!elementGroups.icon.groups.length) continue;
-
-        posMatrix = painter.calculatePosMatrix(coords[i], tile.tileExtent, source.maxzoom);
+        posMatrix = painter.calculatePosMatrix(coords[i], source.maxzoom);
         painter.enableTileClippingMask(coords[i]);
-        drawSymbol(painter, layer, posMatrix, tile, elementGroups.icon, 'icon', elementGroups.sdfIcons, elementGroups.iconsNeedLinear);
+        drawSymbol(painter, layer, posMatrix, tile, bucket, elementGroups.icon, 'icon', elementGroups.sdfIcons, elementGroups.iconsNeedLinear);
     }
 
     for (var j = 0; j < coords.length; j++) {
         tile = source.getTile(coords[j]);
+        bucket = tile.getBucket(layer);
+        if (!bucket) continue;
+        elementGroups = bucket.elementGroups;
+        if (!elementGroups.glyph.length) continue;
 
-        if (!tile.buffers) continue;
-        elementGroups = tile.elementGroups[layer.ref || layer.id];
-        if (!elementGroups) continue;
-        if (!elementGroups.glyph.groups.length) continue;
-
-        posMatrix = painter.calculatePosMatrix(coords[j], tile.tileExtent, source.maxzoom);
+        posMatrix = painter.calculatePosMatrix(coords[j], source.maxzoom);
         painter.enableTileClippingMask(coords[j]);
-        drawSymbol(painter, layer, posMatrix, tile, elementGroups.glyph, 'text', true, false);
+        drawSymbol(painter, layer, posMatrix, tile, bucket, elementGroups.glyph, 'text', true, false);
     }
 
-    for (var k = 0; k < coords.length; k++) {
-        tile = source.getTile(coords[k]);
-        painter.enableTileClippingMask(coords[k]);
-        drawCollisionDebug(painter, layer, coords[k], tile);
-    }
-
-    if (drawAcrossEdges) {
-        gl.enable(gl.STENCIL_TEST);
-    }
     gl.enable(gl.DEPTH_TEST);
+
+    drawCollisionDebug(painter, source, layer, coords);
 }
 
 var defaultSizes = {
@@ -74,7 +67,7 @@ var defaultSizes = {
     text: 24
 };
 
-function drawSymbol(painter, layer, posMatrix, tile, elementGroups, prefix, sdf, iconsNeedLinear) {
+function drawSymbol(painter, layer, posMatrix, tile, bucket, elementGroups, prefix, sdf, iconsNeedLinear) {
     var gl = painter.gl;
 
     posMatrix = painter.translatePosMatrix(posMatrix, tile, layer.paint[prefix + '-translate'], layer.paint[prefix + '-translate-anchor']);
@@ -86,7 +79,7 @@ function drawSymbol(painter, layer, posMatrix, tile, elementGroups, prefix, sdf,
 
     if (skewed) {
         exMatrix = mat4.create();
-        s = tile.tileExtent / tile.tileSize / Math.pow(2, painter.transform.zoom - tile.coord.z);
+        s = tile.pixelsToTileUnits(1, painter.transform.zoom);
         gammaScale = 1 / Math.cos(tr._pitch);
     } else {
         exMatrix = mat4.clone(painter.transform.exMatrix);
@@ -120,22 +113,23 @@ function drawSymbol(painter, layer, posMatrix, tile, elementGroups, prefix, sdf,
     }
 
     if (text) {
-        var textfont = layer.layout['text-font'];
-        var fontstack = textfont && textfont.join(',');
+        // use the fonstack used when parsing the tile, not the fontstack
+        // at the current zoom level (layout['text-font']).
+        var fontstack = elementGroups.fontstack;
         var glyphAtlas = fontstack && painter.glyphSource.getGlyphAtlas(fontstack);
         if (!glyphAtlas) return;
 
         glyphAtlas.updateTexture(gl);
-        vertex = tile.buffers.glyphVertex;
-        elements = tile.buffers.glyphElement;
+        vertex = bucket.buffers.glyphVertex;
+        elements = bucket.buffers.glyphElement;
         texsize = [glyphAtlas.width / 4, glyphAtlas.height / 4];
     } else {
         var mapMoving = painter.options.rotating || painter.options.zooming;
         var iconScaled = fontScale !== 1 || browser.devicePixelRatio !== painter.spriteAtlas.pixelRatio || iconsNeedLinear;
         var iconTransformed = alignedWithMap || painter.transform.pitch;
         painter.spriteAtlas.bind(gl, sdf || mapMoving || iconScaled || iconTransformed);
-        vertex = tile.buffers.iconVertex;
-        elements = tile.buffers.iconElement;
+        vertex = bucket.buffers.iconVertex;
+        elements = bucket.buffers.iconElement;
         texsize = [painter.spriteAtlas.width / 4, painter.spriteAtlas.height / 4];
     }
 
@@ -175,8 +169,8 @@ function drawSymbol(painter, layer, posMatrix, tile, elementGroups, prefix, sdf,
             gl.uniform4fv(shader.u_color, haloColor);
             gl.uniform1f(shader.u_buffer, (haloOffset - layer.paint[prefix + '-halo-width'] / fontScale) / sdfPx);
 
-            for (var j = 0; j < elementGroups.groups.length; j++) {
-                group = elementGroups.groups[j];
+            for (var j = 0; j < elementGroups.length; j++) {
+                group = elementGroups[j];
                 offset = group.vertexStartIndex * vertex.itemSize;
                 vertex.bind(gl);
                 vertex.setAttribPointers(gl, shader, offset);
@@ -192,8 +186,8 @@ function drawSymbol(painter, layer, posMatrix, tile, elementGroups, prefix, sdf,
         gl.uniform4fv(shader.u_color, color);
         gl.uniform1f(shader.u_buffer, (256 - 64) / 256);
 
-        for (var i = 0; i < elementGroups.groups.length; i++) {
-            group = elementGroups.groups[i];
+        for (var i = 0; i < elementGroups.length; i++) {
+            group = elementGroups[i];
             offset = group.vertexStartIndex * vertex.itemSize;
             vertex.bind(gl);
             vertex.setAttribPointers(gl, shader, offset);
@@ -205,8 +199,8 @@ function drawSymbol(painter, layer, posMatrix, tile, elementGroups, prefix, sdf,
 
     } else {
         gl.uniform1f(shader.u_opacity, layer.paint['icon-opacity']);
-        for (var k = 0; k < elementGroups.groups.length; k++) {
-            group = elementGroups.groups[k];
+        for (var k = 0; k < elementGroups.length; k++) {
+            group = elementGroups[k];
             offset = group.vertexStartIndex * vertex.itemSize;
             vertex.bind(gl);
             vertex.setAttribPointers(gl, shader, offset);

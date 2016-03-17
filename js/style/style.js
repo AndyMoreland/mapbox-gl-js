@@ -13,7 +13,7 @@ var normalizeURL = require('../util/mapbox').normalizeStyleURL;
 var browser = require('../util/browser');
 var Dispatcher = require('../util/dispatcher');
 var AnimationLoop = require('./animation_loop');
-var validate = require('mapbox-gl-style-spec/lib/validate/latest');
+var validateStyle = require('./validate_style');
 
 module.exports = Style;
 
@@ -33,6 +33,7 @@ function Style(stylesheet, animationLoop) {
     util.bindAll([
         '_forwardSourceEvent',
         '_forwardTileEvent',
+        '_forwardLayerEvent',
         '_redoPlacement'
     ], this);
 
@@ -42,13 +43,7 @@ function Style(stylesheet, animationLoop) {
             return;
         }
 
-        var valid = validate(stylesheet);
-        if (valid.length) {
-            for (var i = 0; i < valid.length; i++) {
-                this.fire('error', { error: new Error(valid[i].message) });
-            }
-            return;
-        }
+        if (validateStyle.emitErrors(this, validateStyle(stylesheet))) return;
 
         this._loaded = true;
         this.stylesheet = stylesheet;
@@ -136,6 +131,7 @@ Style.prototype = util.inherit(Evented, {
             if (layerJSON.ref) continue;
             layer = StyleLayer.create(layerJSON);
             this._layers[layer.id] = layer;
+            layer.on('error', this._forwardLayerEvent);
         }
 
         // resolve all layers WITH a ref
@@ -145,6 +141,7 @@ Style.prototype = util.inherit(Evented, {
             var refLayer = this.getLayer(layerJSON.ref);
             layer = StyleLayer.create(layerJSON, refLayer);
             this._layers[layer.id] = layer;
+            layer.on('error', this._forwardLayerEvent);
         }
 
         this._groupLayers();
@@ -170,10 +167,18 @@ Style.prototype = util.inherit(Evented, {
         }
     },
 
-    _broadcastLayers: function() {
-        this.dispatcher.broadcast('set layers', this._order.map(function(id) {
-            return this._layers[id].serialize();
-        }, this));
+    _broadcastLayers: function(ids) {
+        this.dispatcher.broadcast(ids ? 'update layers' : 'set layers', this._serializeLayers(ids));
+    },
+
+    _serializeLayers: function(ids) {
+        ids = ids || this._order;
+        var serialized = [];
+        var options = {includeRefProperties: true};
+        for (var i = 0; i < ids.length; i++) {
+            serialized.push(this._layers[ids[i]].serialize(options));
+        }
+        return serialized;
     },
 
     _cascade: function(classes, options) {
@@ -193,14 +198,14 @@ Style.prototype = util.inherit(Evented, {
     },
 
     _recalculate: function(z) {
-        for (var id in this.sources)
-            this.sources[id].used = false;
+        for (var sourceId in this.sources)
+            this.sources[sourceId].used = false;
 
         this._updateZoomHistory(z);
 
         this.rasterFadeDuration = 300;
-        for (id in this._layers) {
-            var layer = this._layers[id];
+        for (var layerId in this._layers) {
+            var layer = this._layers[layerId];
 
             layer.recalculate(z, this.zoomHistory);
             if (!layer.isHidden(z) && layer.source) {
@@ -384,6 +389,27 @@ Style.prototype = util.inherit(Evented, {
         return this.getLayer(layer).getPaintProperty(name, klass);
     },
 
+    serialize: function() {
+        return util.filterObject({
+            version: this.stylesheet.version,
+            name: this.stylesheet.name,
+            metadata: this.stylesheet.metadata,
+            center: this.stylesheet.center,
+            zoom: this.stylesheet.zoom,
+            bearing: this.stylesheet.bearing,
+            pitch: this.stylesheet.pitch,
+            sprite: this.stylesheet.sprite,
+            glyphs: this.stylesheet.glyphs,
+            transition: this.stylesheet.transition,
+            sources: util.mapObject(this.sources, function(source) {
+                return source.serialize();
+            }),
+            layers: this._order.map(function(id) {
+                return this._layers[id].serialize();
+            }, this)
+        }, function(value) { return value !== undefined; });
+    },
+
     featuresAt: function(coord, params, callback) {
         this._queryFeatures('featuresAt', coord, params, callback);
     },
@@ -415,7 +441,9 @@ Style.prototype = util.inherit(Evented, {
                     return this._layers[feature.layer] !== undefined;
                 }.bind(this))
                 .map(function(feature) {
-                    feature.layer = this._layers[feature.layer].serialize();
+                    feature.layer = this._layers[feature.layer].serialize({
+                        includeRefProperties: true
+                    });
                     return feature;
                 }.bind(this)));
         }.bind(this));
@@ -447,6 +475,10 @@ Style.prototype = util.inherit(Evented, {
 
     _forwardTileEvent: function(e) {
         this.fire(e.type, util.extend({source: e.target}, e));
+    },
+
+    _forwardLayerEvent: function(e) {
+        this.fire('layer.' + e.type, util.extend({layer: {id: e.target.id}}, e));
     },
 
     // Callbacks from web workers

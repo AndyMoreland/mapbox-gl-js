@@ -6,7 +6,7 @@ footer:
     - title: Data
       path: /data-platform
     - title: Pricing
-      path: /plans
+      path: /pricing
     - title: Blog
       path: /blog
     - title: Showcase
@@ -97,7 +97,7 @@ footer:
   {% if page.description %}<meta name='description' content='{{page.description | strip_html}}'/>{% endif %}
   <title>{% if page.title == 'Mapbox' %}{{page.title}} | Design and publish beautiful maps{% else %}{{page.title}} | Mapbox{% endif %}</title>
 
-  <meta class='swiftype' name='title' data-type='string' content='{{page.title | replace:"'","&lsquo;" | replace:"'","&lsquo;" | replace:"| Mapbox",""}}' />
+  <meta class='swiftype' name='title' data-type='string' content='{{page.title | replace:"'","&rsquo;" | replace:"'","&rsquo;" | replace:"| Mapbox",""}}' />
   <meta class='swiftype' name='type' data-type='enum' content='{% if page.section %}{{page.section}}{% elsif page.category %}{{page.category}}{% else %}site{% endif %}' />
   <meta class='swiftype' name='info' data-type='string' content='{% if page.version %}{{page.version}}{% else %}site{% endif %}' />{% if page.date and site.baseurl == '/blog' %}
   <meta class='swiftype' name='published_at' data-type='date' content='{{ page.date | date_to_xmlschema }}' />{% endif %}{% if page.tags %}
@@ -105,16 +105,16 @@ footer:
   {% endfor %}{% endif %}{% if page.category and page.category !='none' %}
   <meta class='swiftype' name='category' data-type='string' content='{{page.category}}' />{% endif %}{% if page.author %}
   <meta class='swiftype' name='author' data-type='string' content='{{page.author}}' />{% endif %}{% if page.excerpt or page.description %}
-  <meta class='swiftype' name='excerpt' data-type='string' content='{% if page.description %}{{ page.description | truncatewords: 30 }}{% else %}{{ page.excerpt | strip_html | strip_newlines | replace:"'","&lsquo;" | replace:"'","&lsquo;" | truncatewords: 30 }}{% endif %}' />{% endif %}
+  <meta class='swiftype' name='excerpt' data-type='string' content='{% if page.description %}{{ page.description | strip_html | strip_newlines | replace:"'","&rsquo;" | replace:"'","&rsquo;" | truncatewords: 30 }}{% else %}{{ page.excerpt | strip_html | strip_newlines | replace:"'","&rsquo;" | replace:"'","&rsquo;" | truncatewords: 30 }}{% endif %}' />{% endif %}
   {% if page.card %}
   <meta name='twitter:site' content='@Mapbox' />
   <meta property='og:site_name' content='Mapbox' />
   <meta name='twitter:url' content='{% if page.permalink %}{{page.permalink}}{% else %}{{page.url | replace:"index.html",""}}{% endif %}' />
   <meta property='og:url' content='{% if page.permalink %}{{page.permalink}}{% else %}{{page.url | replace:"index.html",""}}{% endif %}' />
-  <meta name='twitter:title' content='{{page.title | replace:"'","&rsquo;"}}' />
-  <meta property='og:title' content='{{page.title | replace:"'","&rsquo;"}}' />
-  <meta name='twitter:description' content='{% if page.description %}{{ page.description | truncatewords: 30 }}{% elsif page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | replace:"'","&lsquo;" | replace:"'","&lsquo;" | truncatewords: 30 }}{% else %}{{content | strip_html | truncatewords: 30 }}{% endif %}' />
-  <meta property='og:description' content='{% if page.description %}{{ page.description | truncatewords: 30 }}{% elsif page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | replace:"'","&lsquo;" | replace:"'","&lsquo;" | truncatewords: 30 }}{% else %}{{content | strip_html | truncatewords: 30 }}{% endif %}' />
+  <meta name='twitter:title' content='{{page.title | replace:"'","&rsquo;" | replace:"'","&rsquo;"}}' />
+  <meta property='og:title' content='{{page.title | replace:"'","&rsquo;" | replace:"'","&rsquo;"}}' />
+  <meta name='twitter:description' content='{% if page.description %}{{ page.description | truncatewords: 30 }}{% elsif page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | replace:"'","&rsquo;" | replace:"'","&rsquo;" | truncatewords: 30 }}{% else %}{{content | strip_html | truncatewords: 30 }}{% endif %}' />
+  <meta property='og:description' content='{% if page.description %}{{ page.description | truncatewords: 30 }}{% elsif page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | replace:"'","&rsquo;" | replace:"'","&rsquo;" | truncatewords: 30 }}{% else %}{{content | strip_html | truncatewords: 30 }}{% endif %}' />
   {% if page.video %}
   <meta name='twitter:card' content='player' />
   <meta name='twitter:player' content='{{page.video | replace: "http:" , "https:" }}' />
@@ -181,6 +181,7 @@ footer:
 {% if page.app %}
 {{content}}
 {% else %}
+
 <div class='main-subnav fill-midnight splash pin-top dark clearfix'>
   <div class='prose dark keyline-top pad4y hover-area clearfix'>
     <div class='limiter clearfix'>
@@ -203,6 +204,7 @@ footer:
         </div>
         <div class='col5 margin1r'>
           <h3>Our platform</h3>
+          <a class='block pad1y icon mt' href='/enterprise/'>Enterprise ready</a>
           <a class='block pad1y icon building' href='/platform/'>Scalable infrastructure</a>
           <a class='block pad1y icon lock' href='/platform/security/'>Security</a>
           <a class='block pad1y icon data' href='/data-platform/'>Curated Data</a>
@@ -231,6 +233,7 @@ footer:
             <a class='block pad0y' href='/industries/government'>Government</a>
             <a class='block pad0y' href='/industries/health'>Health</a>
             <a class='block pad0y' href='/industries/media'>Media</a>
+            <a class='block pad0y' href='/industries/travel'>Travel</a>
           </div>
         </div>
         <div class='col4 margin1'>
@@ -284,7 +287,7 @@ footer:
             <a class='block pad1y icon paint' href='/help/#design-a-map'>Design a map</a>
             <a class='block pad1y icon mobile' href='/help/#build-a-mobile-app'>Build a mobile app</a>
             <a class='block pad1y icon globe' href='/help/#build-a-web-app'>Build a web app</a>
-            <a class='block pad1y icon bolt' href='help/#extend-my-app-with-web-services'>Extend my app with web services</a>
+            <a class='block pad1y icon bolt' href='/help/#extend-my-app-with-web-services'>Extend my app with web services</a>
           </div>
           <div class='col6'>
             <a class='block pad1y icon satellite'  href='/help/#work-with-data-and-imagery'>Work with data &amp; Imagery</a>
@@ -299,7 +302,7 @@ footer:
   </div>
 </div>
 
-<div class='masthead col12 clearfix {% unless page.options contains 'bleed' %}fill-blue{% endunless %} {% unless page.options contains 'light' %}dark{% endunless %} {% if page.title == 'Mapbox' %}home-nav{% endif %} {% if page.url contains '/gallery' %}gallery-page{% endif %}' data-swiftype-index='false'>
+<div class='masthead col12 clearfix {% unless page.options contains 'bleed' %}fill-blue{% endunless %} {% unless page.options contains 'light' %}dark{% endunless %} {% if page.title == 'Mapbox' %}home-nav{% endif %} {% if page.title == 'Developers' %}developers-nav{% endif %} {% if page.title == 'Education' %}education-nav{% endif %} {% if page.url contains '/gallery' %}gallery-page{% endif %}' data-swiftype-index='false'>
   <div class='limiter clearfix'>
     <nav class='col12 text-right navigation-padding-top contain animate clearfix noprint'>
       <a class='fl mb-logo' href='/'></a>
@@ -312,7 +315,7 @@ footer:
           <div class='dropdown inline fl contain'  data-category='use-cases'> <a href='/industries/'  class='contain primary-nav-button fl pad1x pad0y round'>Industries</a></div>
          <div class='dropdown inline fl contain'  data-category='documentation'>  <a href='/developers/'  class='contain primary-nav-button fl pad1x pad0y round '>Developers</a></div>
          <div class='dropdown inline fl contain'  data-category='help'>  <a href='/help/'  class='contain primary-nav-button fl pad1x pad0y round {% if page.url contains '/help' %}active{% endif %}'>Help &amp; Guides</a></div>
-          <div class='inline fl'> <a href='/plans/'  class='primary-nav-button fl pad1x pad0y round quiet {% if page.url contains '/plans' %}active{% endif %}'>Pricing</a></div>
+          <div class='inline fl'> <a href='/pricing/'  class='primary-nav-button fl pad1x pad0y round quiet {% if page.url contains '/pricing' %}active{% endif %}'>Pricing</a></div>
           <div class='inline fl'> <a href='/blog/'   class='primary-nav-button fl pad1x pad0y round quiet {% if page.url contains '/blog' %}active{% endif %}'>Blog</a></div>
         </div>
         <!-- Hardcoded width so content doesn't jump -->
@@ -374,10 +377,11 @@ footer:
   </div>
 </div>
 
+
 <div class='{% unless page.options contains 'full' %} limiter clearfix{% endunless %}'>{{content}}</div>
 
 {% unless page.url contains '/hello/directions' or page.url contains '/welcome'  %}
-<div class='footer footer-in-docs clearfix contain hide-mobile fill-light' data-swiftype-index='false'>
+<div class='footer footer-in-docs clearfix contain hide-mobile noprint fill-light' data-swiftype-index='false'>
   <div class='limiter clearfix'>
     <div class='footer-in-docs footer-cols-in-docs clearfix col12 pad8y small'>
       <div class='hide-in-docs col2'>

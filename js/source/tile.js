@@ -1,7 +1,7 @@
 'use strict';
 
 var util = require('../util/util');
-var Buffer = require('../data/buffer');
+var Bucket = require('../data/bucket');
 
 module.exports = Tile;
 
@@ -16,15 +16,33 @@ module.exports = Tile;
 function Tile(coord, size, sourceMaxZoom) {
     this.coord = coord;
     this.uid = util.uniqueId();
-    this.loaded = false;
+    this.loaded = false; // TODO rename loaded
+    this.isUnloaded = false;
     this.uses = 0;
     this.tileSize = size;
     this.sourceMaxZoom = sourceMaxZoom;
+    this.buckets = {};
 }
 
 Tile.prototype = {
-    // todo unhardcode
-    tileExtent: 4096,
+
+    /**
+     * Converts a pixel value at a the given zoom level to tile units.
+     *
+     * The shaders mostly calculate everything in tile units so style
+     * properties need to be converted from pixels to tile units using this.
+     *
+     * For example, a translation by 30 pixels at zoom 6.5 will be a
+     * translation by pixelsToTileUnits(30, 6.5) tile units.
+     *
+     * @param {number} pixelValue
+     * @param {number} z
+     * @returns {number} value in tile units
+     * @private
+     */
+    pixelsToTileUnits: function(pixelValue, z) {
+        return pixelValue * (Bucket.EXTENT / (this.tileSize * Math.pow(2, z - this.coord.z)));
+    },
 
     /**
      * Given a coordinate position, zoom that coordinate to my zoom and
@@ -36,8 +54,8 @@ Tile.prototype = {
     positionAt: function(coord) {
         var zoomedCoord = coord.zoomTo(Math.min(this.coord.z, this.sourceMaxZoom));
         return {
-            x: (zoomedCoord.column - this.coord.x) * this.tileExtent,
-            y: (zoomedCoord.row - this.coord.y) * this.tileExtent
+            x: (zoomedCoord.column - this.coord.x) * Bucket.EXTENT,
+            y: (zoomedCoord.row - this.coord.y) * Bucket.EXTENT
         };
     },
 
@@ -56,9 +74,7 @@ Tile.prototype = {
         // empty GeoJSON tile
         if (!data) return;
 
-        this.buffers = unserializeBuffers(data.buffers);
-        this.elementGroups = data.elementGroups;
-        this.tileExtent = data.extent;
+        this.buckets = unserializeBuckets(data.buckets);
     },
 
     /**
@@ -69,28 +85,17 @@ Tile.prototype = {
      * @returns {undefined}
      * @private
      */
+    // TODO rewrite this
     reloadSymbolData: function(data, painter) {
+        if (this.isUnloaded) return;
 
-        if (!this.buffers) {
-            // the tile has been destroyed
-            return;
-        }
+        var newBuckets = unserializeBuckets(data.buckets);
+        for (var id in newBuckets) {
+            var newBucket = newBuckets[id];
+            var oldBucket = this.buckets[id];
 
-        if (this.buffers.glyphVertex) this.buffers.glyphVertex.destroy(painter.gl);
-        if (this.buffers.glyphElement) this.buffers.glyphElement.destroy(painter.gl);
-        if (this.buffers.iconVertex) this.buffers.iconVertex.destroy(painter.gl);
-        if (this.buffers.iconElement) this.buffers.iconElement.destroy(painter.gl);
-        if (this.buffers.collisionBoxVertex) this.buffers.collisionBoxVertex.destroy(painter.gl);
-
-        var buffers = unserializeBuffers(data.buffers);
-        this.buffers.glyphVertex = buffers.glyphVertex;
-        this.buffers.glyphElement = buffers.glyphElement;
-        this.buffers.iconVertex = buffers.iconVertex;
-        this.buffers.iconElement = buffers.iconElement;
-        this.buffers.collisionBoxVertex = buffers.collisionBoxVertex;
-
-        for (var id in data.elementGroups) {
-            this.elementGroups[id] = data.elementGroups[id];
+            oldBucket.destroy(painter.gl);
+            this.buckets[id] = newBucket;
         }
     },
 
@@ -103,15 +108,14 @@ Tile.prototype = {
      * @private
      */
     unloadVectorData: function(painter) {
-        this.loaded = false;
-
-        for (var b in this.buffers) {
-            if (this.buffers[b]) this.buffers[b].destroy(painter.gl);
+        for (var id in this.buckets) {
+            var bucket = this.buckets[id];
+            bucket.destroy(painter.gl);
         }
 
-        this.elementGroups = null;
-        this.buffers = null;
-        this.tileExtent = null;
+        this.buckets = null;
+        this.loaded = false;
+        this.isUnloaded = true;
     },
 
     redoPlacement: function(source) {
@@ -142,15 +146,16 @@ Tile.prototype = {
         }
     },
 
-    getElementGroups: function(layer, shaderName) {
-        return this.elementGroups && this.elementGroups[layer.ref || layer.id] && this.elementGroups[layer.ref || layer.id][shaderName];
+    getBucket: function(layer) {
+        return this.buckets && this.buckets[layer.ref || layer.id];
     }
 };
 
-function unserializeBuffers(input) {
+function unserializeBuckets(input) {
     var output = {};
-    for (var k in input) {
-        output[k] = new Buffer(input[k]);
+    for (var i = 0; i < input.length; i++) {
+        var bucket = Bucket.create(input[i]);
+        output[bucket.id] = bucket;
     }
     return output;
 }

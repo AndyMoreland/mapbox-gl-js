@@ -50,6 +50,13 @@ var Attribution = require('./control/attribution');
  * @param {boolean} [options.failIfMajorPerformanceCaveat=false] If `true`, map creation will fail if the implementation determines that the performance of the created WebGL context would be dramatically lower than expected.
  * @param {boolean} [options.preserveDrawingBuffer=false] If `true`, The maps canvas can be exported to a PNG using `map.getCanvas().toDataURL();`. This is false by default as a performance optimization.
  * @param {LngLatBounds|Array<Array<number>>} [options.maxBounds] If set, the map is constrained to the given bounds.
+ * @param {boolean} [options.scrollZoom=true] If `true`, enable the "scroll to zoom" interaction (see `ScrollZoomHandler`)
+ * @param {boolean} [options.boxZoom=true] If `true`, enable the "box zoom" interaction (see `BoxZoomHandler`)
+ * @param {boolean} [options.dragRotate=true] If `true`, enable the "drag to rotate" interaction (see `DragRotateHandler`).
+ * @param {boolean} [options.dragPan=true] If `true`, enable the "drag to pan" interaction (see `DragPanHandler`).
+ * @param {boolean} [options.keyboard=true] If `true`, enable keyboard shortcuts (see `KeyboardHandler`).
+ * @param {boolean} [options.doubleClickZoom=true] If `true`, enable the "double click to zoom" interaction (see `DoubleClickZoomHandler`).
+ * @param {boolean} [options.touchZoomRotate=true] If `true`, enable the "pinch to rotate and zoom" interaction (see `TouchZoomRotateHandler`).
  * @example
  * var map = new mapboxgl.Map({
  *   container: 'map',
@@ -127,6 +134,7 @@ var Map = module.exports = function(options) {
     this.on('style.error', this.onError);
     this.on('source.error', this.onError);
     this.on('tile.error', this.onError);
+    this.on('layer.error', this.onError);
 };
 
 util.extend(Map.prototype, Evented);
@@ -266,9 +274,16 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
      * @returns {LngLatBounds}
      */
     getBounds: function() {
-        return new LngLatBounds(
+        var bounds = new LngLatBounds(
             this.transform.pointLocation(new Point(0, 0)),
             this.transform.pointLocation(this.transform.size));
+
+        if (this.transform.angle || this.transform.pitch) {
+            bounds.extend(this.transform.pointLocation(new Point(this.transform.size.x, 0)));
+            bounds.extend(this.transform.pointLocation(new Point(0, this.transform.size.y)));
+        }
+
+        return bounds;
     },
 
     /**
@@ -405,6 +420,7 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
                 .off('source.change', this._onSourceUpdate)
                 .off('layer.add', this._forwardLayerEvent)
                 .off('layer.remove', this._forwardLayerEvent)
+                .off('layer.error', this._forwardLayerEvent)
                 .off('tile.add', this._forwardTileEvent)
                 .off('tile.remove', this._forwardTileEvent)
                 .off('tile.load', this._update)
@@ -436,6 +452,7 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
             .on('source.change', this._onSourceUpdate)
             .on('layer.add', this._forwardLayerEvent)
             .on('layer.remove', this._forwardLayerEvent)
+            .on('layer.error', this._forwardLayerEvent)
             .on('tile.add', this._forwardTileEvent)
             .on('tile.remove', this._forwardTileEvent)
             .on('tile.load', this._update)
@@ -446,6 +463,15 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
         this.on('pitch', this.style._redoPlacement);
 
         return this;
+    },
+
+    /**
+     * Get a style object that can be used to recreate the map's style
+     *
+     * @returns {Object} style
+     */
+    getStyle: function() {
+        return this.style.serialize();
     },
 
     /**
@@ -720,7 +746,7 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
     loaded: function() {
         if (this._styleDirty || this._sourcesDirty)
             return false;
-        if (this.style && !this.style.loaded())
+        if (!this.style || !this.style.loaded())
             return false;
         return true;
     },
@@ -756,11 +782,8 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
             this.style._recalculate(this.transform.zoom);
         }
 
-        if (this.style && this._sourcesDirty && !this._sourcesDirtyTimeout) {
+        if (this.style && this._sourcesDirty) {
             this._sourcesDirty = false;
-            this._sourcesDirtyTimeout = setTimeout(function() {
-                this._sourcesDirtyTimeout = null;
-            }.bind(this), 50);
             this.style._updateSources(this.transform);
         }
 
@@ -800,7 +823,6 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
     remove: function() {
         if (this._hash) this._hash.remove();
         browser.cancelFrame(this._frameId);
-        clearTimeout(this._sourcesDirtyTimeout);
         this.setStyle(null);
         if (typeof window !== 'undefined') {
             window.removeEventListener('resize', this._onWindowResize, false);
@@ -811,7 +833,8 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
     },
 
     /**
-     * A default error handler for `style.error`, `source.error`, and `tile.error` events.
+     * A default error handler for `style.error`, `source.error`, `layer.error`,
+     * and `tile.error` events.
      * It logs the error via `console.error`.
      *
      * @example
@@ -819,6 +842,7 @@ util.extend(Map.prototype, /** @lends Map.prototype */{
      * map.off('style.error', map.onError);
      * map.off('source.error', map.onError);
      * map.off('tile.error', map.onError);
+     * map.off('layer.error', map.onError);
      */
     onError: function(e) {
         console.error(e.error);

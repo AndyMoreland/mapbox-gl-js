@@ -8,24 +8,16 @@ module.exports = StyleDeclaration;
 function StyleDeclaration(reference, value) {
     this.type = reference.type;
     this.transitionable = reference.transition;
-
-    if (value == null) {
-        value = reference.default;
-    }
+    this.value = value;
 
     // immutable representation of value. used for comparison
-    this.json = JSON.stringify(value);
+    this.json = JSON.stringify(this.value);
 
-    if (this.type === 'color') {
-        this.value = parseColor(value);
-    } else {
-        this.value = value;
-    }
-
+    var parsedValue = this.type === 'color' ? parseColor(this.value) : value;
     if (reference.function === 'interpolated') {
-        this.calculate = MapboxGLFunction.interpolated(this.value);
+        this.calculate = MapboxGLFunction.interpolated(parsedValue);
     } else {
-        this.calculate = MapboxGLFunction['piecewise-constant'](this.value);
+        this.calculate = MapboxGLFunction['piecewise-constant'](parsedValue);
         if (reference.transition) {
             this.calculate = transitioned(this.calculate);
         }

@@ -26,13 +26,13 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
 
     var stats = { _total: 0 };
 
-    var tile = this,
-        buffers = {},
-        bucketsById = {},
-        bucketsBySourceLayer = {},
-        i, layer, sourceLayerId, bucket;
-
-    var extent = this.extent = getExtent(data.layers);
+    var tile = this;
+    var bucketsById = {};
+    var bucketsBySourceLayer = {};
+    var i;
+    var layer;
+    var sourceLayerId;
+    var bucket;
 
     // Map non-ref layers to buckets.
     for (i = 0; i < layers.length; i++) {
@@ -46,12 +46,11 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
 
         bucket = Bucket.create({
             layer: layer,
-            buffers: buffers,
             zoom: this.zoom,
             overscaling: this.overscaling,
-            collisionDebug: this.collisionDebug,
-            tileExtent: extent
+            collisionDebug: this.collisionDebug
         });
+        bucket.createFilter();
 
         bucketsById[layer.id] = bucket;
 
@@ -96,7 +95,7 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
         symbolBuckets = this.symbolBuckets = [],
         otherBuckets = [];
 
-    var collisionTile = new CollisionTile(this.angle, this.pitch, extent);
+    var collisionTile = new CollisionTile(this.angle, this.pitch);
 
     for (var id in bucketsById) {
         bucket = bucketsById[id];
@@ -110,8 +109,10 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
             otherBuckets.push(bucket);
     }
 
-    var icons = {},
-        stacks = {};
+    var icons = {};
+    var stacks = {};
+    var deps = 0;
+
 
     if (symbolBuckets.length > 0) {
 
@@ -125,8 +126,6 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
             stacks[fontName] = Object.keys(stacks[fontName]).map(Number);
         }
         icons = Object.keys(icons);
-
-        var deps = 0;
 
         actor.send('get glyphs', {uid: this.uid, stacks: stacks}, function(err, newStacks) {
             stacks = newStacks;
@@ -165,7 +164,7 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
 
     function parseBucket(tile, bucket) {
         var now = Date.now();
-        bucket.addFeatures(collisionTile, stacks, icons);
+        bucket.populateBuffers(collisionTile, stacks, icons);
         var time = Date.now() - now;
 
         if (bucket.interactive) {
@@ -185,73 +184,58 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
         tile.status = 'done';
 
         if (tile.redoPlacementAfterDone) {
-            var result = tile.redoPlacement(tile.angle, tile.pitch).result;
-            buffers.glyphVertex = result.buffers.glyphVertex;
-            buffers.iconVertex = result.buffers.iconVertex;
-            buffers.collisionBoxVertex = result.buffers.collisionBoxVertex;
+            tile.redoPlacement(tile.angle, tile.pitch, null);
             tile.redoPlacementAfterDone = false;
         }
 
+        buckets = filterEmptyBuckets(buckets);
+
         callback(null, {
-            elementGroups: getElementGroups(buckets),
-            buffers: buffers,
-            extent: extent,
-            bucketStats: stats
-        }, getTransferables(buffers));
+            buckets: buckets.map(function(bucket) { return bucket.serialize(); }),
+            bucketStats: stats // TODO put this in a separate message?
+        }, getTransferables(buckets));
     }
 };
 
 WorkerTile.prototype.redoPlacement = function(angle, pitch, collisionDebug) {
-
     if (this.status !== 'done') {
         this.redoPlacementAfterDone = true;
         this.angle = angle;
         return {};
     }
 
-    var buffers = {},
-        collisionTile = new CollisionTile(angle, pitch, this.extent);
+    var collisionTile = new CollisionTile(angle, pitch);
+    var buckets = this.symbolBuckets;
 
-    for (var i = this.symbolBuckets.length - 1; i >= 0; i--) {
-        this.symbolBuckets[i].placeFeatures(collisionTile, buffers, collisionDebug);
+    for (var i = buckets.length - 1; i >= 0; i--) {
+        buckets[i].placeFeatures(collisionTile, collisionDebug);
     }
+
+    buckets = filterEmptyBuckets(buckets);
 
     return {
         result: {
-            elementGroups: getElementGroups(this.symbolBuckets),
-            buffers: buffers
+            buckets: buckets.map(function(bucket) { return bucket.serialize(); })
         },
-        transferables: getTransferables(buffers)
+        transferables: getTransferables(buckets)
     };
 };
 
-function getElementGroups(buckets) {
-    var elementGroups = {};
-
-    for (var i = 0; i < buckets.length; i++) {
-        elementGroups[buckets[i].id] = buckets[i].elementGroups;
-    }
-    return elementGroups;
+function filterEmptyBuckets(buckets) {
+    return buckets.filter(function(bucket) {
+        for (var bufferName in bucket.buffers) {
+            if (bucket.buffers[bufferName].length > 0) return true;
+        }
+        return false;
+    });
 }
 
-function getTransferables(buffers) {
+function getTransferables(buckets) {
     var transferables = [];
-
-    for (var k in buffers) {
-        transferables.push(buffers[k].arrayBuffer);
-
-        // The Buffer::push method is generated with "new Function(...)" and not transferrable.
-        buffers[k].push = null;
+    for (var i in buckets) {
+        for (var j in buckets.buffers) {
+            transferables.push(buckets[i].buffers[j].arrayBuffer);
+        }
     }
     return transferables;
-}
-
-function getExtent(layers) {
-    var extent = 4096;
-    if (!layers) return extent;
-    for (var key in layers) {
-        var layer = layers[key];
-        if (layer && layer.extent) extent = layer.extent;
-    }
-    return extent;
 }

@@ -30,6 +30,17 @@ util.extend(Worker.prototype, {
         this.layers = layers;
     },
 
+    'update layers': function(layers) {
+        var layersById = {};
+        var i;
+        for (i = 0; i < layers.length; i++) {
+            layersById[layers[i].id] = layers[i];
+        }
+        for (i = 0; i < this.layers.length; i++) {
+            this.layers[i] = layersById[this.layers[i].id] || this.layers[i];
+        }
+    },
+
     'load tile': function(params, callback) {
         var source = params.source,
             uid = params.uid;
@@ -135,7 +146,7 @@ util.extend(Worker.prototype, {
 
         // console.time('tile ' + coord.z + ' ' + coord.x + ' ' + coord.y);
 
-        var geoJSONTile = this.geoJSONIndexes[source].getTile(coord.z, coord.x, coord.y);
+        var geoJSONTile = this.geoJSONIndexes[source].getTile(Math.min(coord.z, params.maxZoom), coord.x, coord.y);
 
         // console.timeEnd('tile ' + coord.z + ' ' + coord.x + ' ' + coord.y);
 

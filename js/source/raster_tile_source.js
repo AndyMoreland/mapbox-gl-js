@@ -39,11 +39,19 @@ RasterTileSource.prototype = util.inherit(Evented, {
         // noop
     },
 
+    serialize: function() {
+        return {
+            type: 'raster',
+            url: this.url,
+            tileSize: this.tileSize
+        };
+    },
+
     getVisibleCoordinates: Source._getVisibleCoordinates,
     getTile: Source._getTile,
 
     _loadTile: function(tile) {
-        var url = normalizeURL(tile.coord.url(this.tiles), this.url);
+        var url = normalizeURL(tile.coord.url(this.tiles), this.url, this.tileSize);
 
         tile.request = ajax.getImage(url, done.bind(this));
 

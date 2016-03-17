@@ -20,7 +20,7 @@ test('Buffer', function(t) {
         var buffer = create();
 
         t.equal(buffer.type, Buffer.BufferType.VERTEX);
-        t.equal(buffer.capacity, 8192);
+        t.equal(buffer.capacity, 1024);
         t.equal(buffer.length, 0);
         t.equal(buffer.itemSize, 8);
         t.ok(buffer.arrayBuffer);
@@ -67,6 +67,19 @@ test('Buffer', function(t) {
 
         buffer.push(1, 1, 1);
         t.ok(buffer.capacity > capacityInitial);
+
+        t.end();
+    });
+
+    t.test('trims', function(t) {
+        var buffer = create();
+        var capacityInitial = buffer.capacity;
+
+        buffer.push(1, 1, 1);
+        t.equal(buffer.capacity, capacityInitial);
+
+        buffer.trim();
+        t.equal(buffer.capacity, buffer.itemSize);
 
         t.end();
     });

@@ -2,33 +2,42 @@
 
 module.exports = drawCollisionDebug;
 
-function drawCollisionDebug(painter, layer, coord, tile) {
-    if (!tile.buffers) return;
-    var elementGroups = tile.getElementGroups(layer, 'collisionBox');
-    if (!elementGroups) return;
-
+function drawCollisionDebug(painter, source, layer, coords) {
     var gl = painter.gl;
-    var buffer = tile.buffers.collisionBoxVertex;
     var shader = painter.collisionBoxShader;
-    var posMatrix = painter.calculatePosMatrix(coord, tile.tileExtent);
-
     gl.enable(gl.STENCIL_TEST);
-    painter.enableTileClippingMask(coord);
+    gl.switchShader(shader);
 
-    gl.switchShader(shader, posMatrix);
+    for (var i = 0; i < coords.length; i++) {
+        var coord = coords[i];
+        var tile = source.getTile(coord);
+        var bucket = tile.getBucket(layer);
+        if (!bucket) continue;
+        var elementGroups = bucket.elementGroups.collisionBox;
 
-    buffer.bind(gl);
-    buffer.setAttribPointers(gl, shader, 0);
+        if (!elementGroups) continue;
+        if (!bucket.buffers) continue;
+        if (elementGroups[0].vertexLength === 0) continue;
 
-    gl.lineWidth(1);
+        var buffer = bucket.buffers.collisionBoxVertex;
+        buffer.bind(gl);
+        buffer.setAttribPointers(gl, shader, 0);
 
-    gl.uniform1f(shader.u_scale, Math.pow(2, painter.transform.zoom - tile.coord.z));
-    gl.uniform1f(shader.u_zoom, painter.transform.zoom * 10);
-    gl.uniform1f(shader.u_maxzoom, (tile.coord.z + 1) * 10);
+        var posMatrix = painter.calculatePosMatrix(coord, source.maxzoom);
+        gl.setPosMatrix(posMatrix);
 
-    var begin = elementGroups.groups[0].vertexStartIndex;
-    var len = elementGroups.groups[0].vertexLength;
-    gl.drawArrays(gl.LINES, begin, len);
+        painter.enableTileClippingMask(coord);
 
-    gl.disable(gl.STENCIL_TEST);
+        gl.lineWidth(1);
+        gl.uniform1f(shader.u_scale, Math.pow(2, painter.transform.zoom - tile.coord.z));
+        gl.uniform1f(shader.u_zoom, painter.transform.zoom * 10);
+        gl.uniform1f(shader.u_maxzoom, (tile.coord.z + 1) * 10);
+
+        gl.drawArrays(
+            gl.LINES,
+            elementGroups[0].vertexStartIndex,
+            elementGroups[0].vertexLength
+        );
+
+    }
 }

@@ -13,6 +13,10 @@ var assert = require('assert');
  * statically typed structs. A buffer is comprised of items. An item is comprised of a set of
  * attributes. Attributes are defined when the class is constructed.
  *
+ * Though the buffers are intended for WebGL, this class should have no formal code dependencies
+ * on WebGL. Though the buffers are populated by vector tile features, this class should have
+ * no domain knowledge about vector tiles, coordinate systems, etc.
+ *
  * @class Buffer
  * @private
  * @param options
@@ -70,6 +74,17 @@ function Buffer(options) {
     }
 }
 
+Buffer.prototype.serialize = function() {
+    return {
+        type: this.type,
+        capacity: this.capacity,
+        arrayBuffer: this.arrayBuffer,
+        attributes: this.attributes,
+        itemSize: this.itemSize,
+        length: this.length
+    };
+};
+
 /**
  * Bind this buffer to a WebGL context.
  * @private
@@ -81,7 +96,7 @@ Buffer.prototype.bind = function(gl) {
     if (!this.buffer) {
         this.buffer = gl.createBuffer();
         gl.bindBuffer(type, this.buffer);
-        gl.bufferData(type, this.arrayBuffer.slice(0, this.length * this.itemSize), gl.STATIC_DRAW);
+        gl.bufferData(type, this.arrayBuffer, gl.STATIC_DRAW);
 
         // dump array buffer once it's bound to gl
         this.arrayBuffer = null;
@@ -116,6 +131,16 @@ Buffer.prototype.setAttribPointers = function(gl, shader, offset) {
             shader['a_' + attrib.name], attrib.components, gl[attrib.type.name],
             false, this.itemSize, offset + attrib.offset);
     }
+};
+
+/**
+ * Resize the buffer to discard unused capacity.
+ * @private
+ */
+Buffer.prototype.trim = function() {
+    this.capacity = align(this.itemSize * this.length, Buffer.CAPACITY_ALIGNMENT);
+    this.arrayBuffer = this.arrayBuffer.slice(0, this.capacity);
+    this._refreshViews();
 };
 
 /**
@@ -159,11 +184,11 @@ Buffer.prototype.validate = function(args) {
 };
 
 Buffer.prototype._resize = function(capacity) {
-    var old = this.views.UNSIGNED_BYTE;
+    var oldUByteView = this.views.UNSIGNED_BYTE;
     this.capacity = align(capacity, Buffer.CAPACITY_ALIGNMENT);
     this.arrayBuffer = new ArrayBuffer(this.capacity);
     this._refreshViews();
-    this.views.UNSIGNED_BYTE.set(old);
+    this.views.UNSIGNED_BYTE.set(oldUByteView);
 };
 
 Buffer.prototype._refreshViews = function() {
@@ -182,7 +207,7 @@ Buffer.prototype._createPushMethod = function() {
 
     body += 'var i = this.length++;\n';
     body += 'var o = i * ' + this.itemSize + ';\n';
-    body += 'if (o + ' + this.itemSize + ' > this.capacity) { this._resize(this.capacity * 1.5); }\n';
+    body += 'if (o + ' + this.itemSize + ' > this.capacity) { this._resize(this.capacity * ' + Buffer.CAPACITY_RESIZE_MULTIPLIER + '); }\n';
 
     for (var i = 0; i < this.attributes.length; i++) {
         var attribute = this.attributes[i];
@@ -254,7 +279,14 @@ Buffer.ELEMENT_ATTRIBUTE_TYPE = Buffer.AttributeType.UNSIGNED_SHORT;
  * @private
  * @readonly
  */
-Buffer.CAPACITY_DEFAULT = 8192;
+Buffer.CAPACITY_DEFAULT = 1024;
+
+/**
+ * @property {number}
+ * @private
+ * @readonly
+ */
+Buffer.CAPACITY_RESIZE_MULTIPLIER = 5;
 
 /**
  * WebGL performs best if buffer sizes are aligned to 2 byte boundaries.

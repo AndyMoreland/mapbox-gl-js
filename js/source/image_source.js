@@ -6,6 +6,7 @@ var LngLat = require('../geo/lng_lat');
 var Point = require('point-geometry');
 var Evented = require('../util/evented');
 var ajax = require('../util/ajax');
+var EXTENT = require('../data/bucket').EXTENT;
 
 module.exports = ImageSource;
 
@@ -14,8 +15,7 @@ module.exports = ImageSource;
  * @class ImageSource
  * @param {Object} [options]
  * @param {string} options.url A string URL of an image file
- * @param {Array} options.coordinates lng, lat coordinates in order clockwise
- * starting at the top left: tl, tr, br, bl
+ * @param {Array} options.coordinates Four geographical [lng, lat] coordinates in clockwise order defining the corners (starting with top left) of the image. Does not have to be a rectangle.
  * @example
  * var sourceObj = new mapboxgl.ImageSource({
  *    url: 'https://www.mapbox.com/images/foo.png',
@@ -30,6 +30,9 @@ module.exports = ImageSource;
  * map.removeSource('some id');  // remove
  */
 function ImageSource(options) {
+    this.urls = options.urls;
+    this.coordinates = options.coordinates;
+
     ajax.getImage(options.url, function(err, image) {
         // @TODO handle errors via event.
         if (err) return;
@@ -43,8 +46,7 @@ function ImageSource(options) {
         this._loaded = true;
 
         if (this.map) {
-            this.createTile(options.coordinates);
-            this.fire('change');
+            this.setCoordinates(options.coordinates);
         }
     }.bind(this));
 }
@@ -53,30 +55,35 @@ ImageSource.prototype = util.inherit(Evented, {
     onAdd: function(map) {
         this.map = map;
         if (this.image) {
-            this.createTile();
+            this.setCoordinates(this.coordinates);
         }
     },
 
     /**
-     * Calculate which mercator tile is suitable for rendering the image in
-     * and create a buffer with the corner coordinates. These coordinates
-     * may be outside the tile, because raster tiles aren't clipped when rendering.
-     * @private
+     * Update image coordinates and rerender map
+     *
+     * @param {Array} coordinates Four geographical [lng, lat] coordinates in clockwise order defining the corners (starting with top left) of the image. Does not have to be a rectangle.
+     * @returns {ImageSource} this
      */
-    createTile: function(cornerGeoCoords) {
+    setCoordinates: function(coordinates) {
+        this.coordinates = coordinates;
+
+        // Calculate which mercator tile is suitable for rendering the image in
+        // and create a buffer with the corner coordinates. These coordinates
+        // may be outside the tile, because raster tiles aren't clipped when rendering.
+
         var map = this.map;
-        var cornerZ0Coords = cornerGeoCoords.map(function(coord) {
+        var cornerZ0Coords = coordinates.map(function(coord) {
             return map.transform.locationCoordinate(LngLat.convert(coord)).zoomTo(0);
         });
 
         var centerCoord = this.centerCoord = util.getCoordinatesCenter(cornerZ0Coords);
 
-        var tileExtent = 4096;
         var tileCoords = cornerZ0Coords.map(function(coord) {
             var zoomedCoord = coord.zoomTo(centerCoord.zoom);
             return new Point(
-                Math.round((zoomedCoord.column - centerCoord.column) * tileExtent),
-                Math.round((zoomedCoord.row - centerCoord.row) * tileExtent));
+                Math.round((zoomedCoord.column - centerCoord.column) * EXTENT),
+                Math.round((zoomedCoord.row - centerCoord.row) * EXTENT));
         });
 
         var gl = map.painter.gl;
@@ -94,6 +101,10 @@ ImageSource.prototype = util.inherit(Evented, {
         this.tile.boundsBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.tile.boundsBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
+
+        this.fire('change');
+
+        return this;
     },
 
     loaded: function() {
@@ -148,5 +159,13 @@ ImageSource.prototype = util.inherit(Evented, {
 
     featuresIn: function(bbox, params, callback) {
         return callback(null, []);
+    },
+
+    serialize: function() {
+        return {
+            type: 'image',
+            urls: this.urls,
+            coordinates: this.coordinates
+        };
     }
 });

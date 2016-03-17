@@ -2,23 +2,25 @@
 
 var Point = require('point-geometry');
 
-var Bucket = require('./bucket');
-var ElementGroups = require('./element_groups');
-var Anchor = require('../symbol/anchor');
-var getAnchors = require('../symbol/get_anchors');
-var resolveTokens = require('../util/token');
-var Quads = require('../symbol/quads');
-var Shaping = require('../symbol/shaping');
-var resolveText = require('../symbol/resolve_text');
-var mergeLines = require('../symbol/mergelines');
+var Bucket = require('../bucket');
+var Anchor = require('../../symbol/anchor');
+var getAnchors = require('../../symbol/get_anchors');
+var resolveTokens = require('../../util/token');
+var Quads = require('../../symbol/quads');
+var Shaping = require('../../symbol/shaping');
+var resolveText = require('../../symbol/resolve_text');
+var mergeLines = require('../../symbol/mergelines');
+var clipLine = require('../../symbol/clip_line');
+var util = require('../../util/util');
+var loadGeometry = require('../load_geometry');
+var CollisionFeature = require('../../symbol/collision_feature');
+
 var shapeText = Shaping.shapeText;
 var shapeIcon = Shaping.shapeIcon;
 var getGlyphQuads = Quads.getGlyphQuads;
 var getIconQuads = Quads.getIconQuads;
-var clipLine = require('../symbol/clip_line');
-var util = require('../util/util');
 
-var CollisionFeature = require('../symbol/collision_feature');
+var EXTENT = Bucket.EXTENT;
 
 module.exports = SymbolBucket;
 
@@ -26,18 +28,6 @@ function SymbolBucket(options) {
     Bucket.apply(this, arguments);
     this.collisionDebug = options.collisionDebug;
     this.overscaling = options.overscaling;
-
-    // To reduce the number of labels that jump around when zooming we need
-    // to use a text-size value that is the same for all zoom levels.
-    // This calculates text-size at a high zoom level so that all tiles can
-    // use the same value when calculating anchor positions.
-    var zoomHistory = { lastIntegerZoom: Infinity, lastIntegerZoomTime: 0, lastZoom: 0 };
-
-    this.adjustedTextMaxSize = this.layer.getLayoutValue('text-size', 18, zoomHistory);
-    this.adjustedTextSize = this.layer.getLayoutValue('text-size', this.zoom + 1, zoomHistory);
-
-    this.adjustedIconMaxSize = this.layer.getLayoutValue('icon-size', 18, zoomHistory);
-    this.adjustedIconSize = this.layer.getLayoutValue('icon-size', this.zoom + 1, zoomHistory);
 }
 
 SymbolBucket.prototype = util.inherit(Bucket, {});
@@ -77,7 +67,7 @@ var shaderAttributes = [{
     ]
 }];
 
-SymbolBucket.prototype.shaders = {
+SymbolBucket.prototype.shaderInterfaces = {
 
     glyph: {
         vertexBuffer: true,
@@ -123,9 +113,22 @@ SymbolBucket.prototype.shaders = {
     }
 };
 
-SymbolBucket.prototype.addFeatures = function(collisionTile, stacks, icons) {
+SymbolBucket.prototype.populateBuffers = function(collisionTile, stacks, icons) {
+    this.createStyleLayer();
+    this.createBuffers();
+
+    // To reduce the number of labels that jump around when zooming we need
+    // to use a text-size value that is the same for all zoom levels.
+    // This calculates text-size at a high zoom level so that all tiles can
+    // use the same value when calculating anchor positions.
+    var zoomHistory = { lastIntegerZoom: Infinity, lastIntegerZoomTime: 0, lastZoom: 0 };
+    this.adjustedTextMaxSize = this.layer.getLayoutValue('text-size', 18, zoomHistory);
+    this.adjustedTextSize = this.layer.getLayoutValue('text-size', this.zoom + 1, zoomHistory);
+    this.adjustedIconMaxSize = this.layer.getLayoutValue('icon-size', 18, zoomHistory);
+    this.adjustedIconSize = this.layer.getLayoutValue('icon-size', this.zoom + 1, zoomHistory);
+
     var tileSize = 512 * this.overscaling;
-    this.tilePixelRatio = this.tileExtent / tileSize;
+    this.tilePixelRatio = EXTENT / tileSize;
     this.compareText = {};
     this.symbolInstances = [];
     this.iconsNeedLinear = false;
@@ -176,7 +179,7 @@ SymbolBucket.prototype.addFeatures = function(collisionTile, stacks, icons) {
 
     var geometries = [];
     for (var g = 0; g < features.length; g++) {
-        geometries.push(features[g].loadGeometry());
+        geometries.push(loadGeometry(features[g]));
     }
 
     if (layout['symbol-placement'] === 'line') {
@@ -225,7 +228,9 @@ SymbolBucket.prototype.addFeatures = function(collisionTile, stacks, icons) {
         }
     }
 
-    this.placeFeatures(collisionTile, this.buffers, this.collisionDebug);
+    this.placeFeatures(collisionTile, this.collisionDebug);
+
+    this.trimBuffers();
 };
 
 SymbolBucket.prototype.addFeature = function(lines, shapedText, shapedIcon) {
@@ -251,7 +256,7 @@ SymbolBucket.prototype.addFeature = function(lines, shapedText, shapedIcon) {
         textRepeatDistance = symbolMinDistance / 2;
 
     if (isLine) {
-        lines = clipLine(lines, 0, 0, this.tileExtent, this.tileExtent);
+        lines = clipLine(lines, 0, 0, EXTENT, EXTENT);
     }
 
     for (var i = 0; i < lines.length; i++) {
@@ -269,7 +274,7 @@ SymbolBucket.prototype.addFeature = function(lines, shapedText, shapedIcon) {
                 glyphSize,
                 textMaxBoxScale,
                 this.overscaling,
-                this.tileExtent
+                EXTENT
             );
         } else {
             anchors = [ new Anchor(line[0].x, line[0].y, 0) ];
@@ -285,7 +290,7 @@ SymbolBucket.prototype.addFeature = function(lines, shapedText, shapedIcon) {
                 }
             }
 
-            var inside = !(anchor.x < 0 || anchor.x > this.tileExtent || anchor.y < 0 || anchor.y > this.tileExtent);
+            var inside = !(anchor.x < 0 || anchor.x > EXTENT || anchor.y < 0 || anchor.y > EXTENT);
 
             if (avoidEdges && !inside) continue;
 
@@ -300,7 +305,7 @@ SymbolBucket.prototype.addFeature = function(lines, shapedText, shapedIcon) {
             // the buffers for both tiles and clipped to tile boundaries at draw time.
             var addToBuffers = inside || mayOverlap;
 
-            this.symbolInstances.push(new SymbolInstance(anchor, line, shapedText, shapedIcon, layout, addToBuffers,
+            this.symbolInstances.push(new SymbolInstance(anchor, line, shapedText, shapedIcon, layout, addToBuffers, this.symbolInstances.length,
                         textBoxScale, textPadding, textAlongLine,
                         iconBoxScale, iconPadding, iconAlongLine));
         }
@@ -325,15 +330,13 @@ SymbolBucket.prototype.anchorIsTooClose = function(text, repeatDistance, anchor)
     return false;
 };
 
-SymbolBucket.prototype.placeFeatures = function(collisionTile, buffers, collisionDebug) {
+SymbolBucket.prototype.placeFeatures = function(collisionTile, collisionDebug) {
     // Calculate which labels can be shown and when they can be shown and
     // create the bufers used for rendering.
 
-    this.resetBuffers(buffers);
-
     var elementGroups = this.elementGroups = {
-        glyph: new ElementGroups(buffers.glyphVertex, buffers.glyphElement),
-        icon: new ElementGroups(buffers.iconVertex, buffers.iconElement),
+        glyph: [],
+        icon: [],
         sdfIcons: this.sdfIcons,
         iconsNeedLinear: this.iconsNeedLinear
     };
@@ -343,6 +346,10 @@ SymbolBucket.prototype.placeFeatures = function(collisionTile, buffers, collisio
 
     elementGroups.glyph.adjustedSize = this.adjustedTextSize;
     elementGroups.icon.adjustedSize = this.adjustedIconSize;
+
+    // Transfer the name of the fonstack back to the main thread along with the buffers.
+    // The draw function needs to know which fonstack's glyph atlas to bind when rendering.
+    elementGroups.glyph.fontstack = layout['text-font'].join(',');
 
     var textAlongLine = layout['text-rotation-alignment'] === 'map' && layout['symbol-placement'] === 'line';
     var iconAlongLine = layout['icon-rotation-alignment'] === 'map' && layout['symbol-placement'] === 'line';
@@ -360,9 +367,9 @@ SymbolBucket.prototype.placeFeatures = function(collisionTile, buffers, collisio
             cos = Math.cos(angle);
 
         this.symbolInstances.sort(function(a, b) {
-            var aRotated = sin * a.x + cos * a.y;
-            var bRotated = sin * b.x + cos * b.y;
-            return aRotated - bRotated;
+            var aRotated = (sin * a.x + cos * a.y) | 0;
+            var bRotated = (sin * b.x + cos * b.y) | 0;
+            return (aRotated - bRotated) || (b.index - a.index);
         });
     }
 
@@ -473,6 +480,8 @@ SymbolBucket.prototype.addSymbols = function(shaderName, quads, scale, keepUprig
 };
 
 SymbolBucket.prototype.updateIcons = function(icons) {
+    this.createStyleLayer();
+
     var iconValue = this.layer.layout['icon-image'];
     if (!iconValue) return;
 
@@ -484,6 +493,8 @@ SymbolBucket.prototype.updateIcons = function(icons) {
 };
 
 SymbolBucket.prototype.updateFont = function(stacks) {
+    this.createStyleLayer();
+
     var fontName = this.layer.layout['text-font'],
         stack = stacks[fontName] = stacks[fontName] || {};
 
@@ -491,8 +502,8 @@ SymbolBucket.prototype.updateFont = function(stacks) {
 };
 
 SymbolBucket.prototype.addToDebugBuffers = function(collisionTile) {
-    this.elementGroups.collisionBox = new ElementGroups(this.buffers.collisionBoxVertex);
-    var group = this.makeRoomFor('collisionBox', 8);
+    this.elementGroups.collisionBox = [];
+    var group = this.makeRoomFor('collisionBox', 0);
     var angle = -collisionTile.angle;
     var yStretch = collisionTile.yStretch;
 
@@ -528,12 +539,13 @@ SymbolBucket.prototype.addToDebugBuffers = function(collisionTile) {
     }
 };
 
-function SymbolInstance(anchor, line, shapedText, shapedIcon, layout, addToBuffers,
+function SymbolInstance(anchor, line, shapedText, shapedIcon, layout, addToBuffers, index,
                         textBoxScale, textPadding, textAlongLine,
                         iconBoxScale, iconPadding, iconAlongLine) {
 
     this.x = anchor.x;
     this.y = anchor.y;
+    this.index = index;
     this.hasText = !!shapedText;
     this.hasIcon = !!shapedIcon;
 

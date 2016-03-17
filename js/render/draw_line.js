@@ -20,11 +20,13 @@ module.exports = function drawLine(painter, source, layer, coords) {
     painter.depthMask(false);
 
     var hasData = coords.some(function(coord) {
-        return source.getTile(coord).getElementGroups(layer, 'line');
+        var bucket = source.getTile(coord).getBucket(layer);
+        return bucket && bucket.elementGroups.line;
     });
     if (!hasData) return;
 
     var gl = painter.gl;
+    gl.enable(gl.STENCIL_TEST);
 
     // don't draw zero-width lines
     if (layer.paint['line-width'] <= 0) return;
@@ -125,54 +127,56 @@ module.exports = function drawLine(painter, source, layer, coords) {
     for (var k = 0; k < coords.length; k++) {
         var coord = coords[k];
         var tile = source.getTile(coord);
-
-        var elementGroups = tile.getElementGroups(layer, 'line');
+        var bucket = tile.getBucket(layer);
+        if (!bucket) continue;
+        var elementGroups = bucket.elementGroups.line;
         if (!elementGroups) continue;
 
         painter.enableTileClippingMask(coord);
 
         // set uniforms that are different for each tile
-        var posMatrix = painter.translatePosMatrix(painter.calculatePosMatrix(coord, tile.tileExtent, source.maxzoom), tile, layer.paint['line-translate'], layer.paint['line-translate-anchor']);
+        var posMatrix = painter.translatePosMatrix(painter.calculatePosMatrix(coord, source.maxzoom), tile, layer.paint['line-translate'], layer.paint['line-translate-anchor']);
 
         gl.setPosMatrix(posMatrix);
         gl.setExMatrix(painter.transform.exMatrix);
-        var ratio = painter.transform.scale / (1 << coord.z) / (tile.tileExtent / tile.tileSize);
-
+        var ratio = 1 / tile.pixelsToTileUnits(1, painter.transform.zoom);
 
         if (dasharray) {
-            // how much the tile is overscaled by
-            var overscaling = tile.tileSize / painter.transform.tileSize;
-
-            var patternratio = Math.pow(2, Math.floor(Math.log(painter.transform.scale) / Math.LN2) - coord.z) / 8 * overscaling;
-            var scaleA = [patternratio / posA.width / dasharray.fromScale, -posA.height / 2];
-            var gammaA = painter.lineAtlas.width / (dasharray.fromScale * posA.width * 256 * browser.devicePixelRatio) / 2;
-            var scaleB = [patternratio / posB.width / dasharray.toScale, -posB.height / 2];
-            var gammaB = painter.lineAtlas.width / (dasharray.toScale * posB.width * 256 * browser.devicePixelRatio) / 2;
+            var widthA = posA.width * dasharray.fromScale;
+            var widthB = posB.width * dasharray.toScale;
+            var scaleA = [1 / tile.pixelsToTileUnits(widthA, painter.transform.tileZoom), -posA.height / 2];
+            var scaleB = [1 / tile.pixelsToTileUnits(widthB, painter.transform.tileZoom), -posB.height / 2];
+            var gamma = painter.lineAtlas.width / (Math.min(widthA, widthB) * 256 * browser.devicePixelRatio) / 2;
             gl.uniform1f(shader.u_ratio, ratio);
             gl.uniform2fv(shader.u_patternscale_a, scaleA);
             gl.uniform2fv(shader.u_patternscale_b, scaleB);
-            gl.uniform1f(shader.u_sdfgamma, Math.max(gammaA, gammaB));
+            gl.uniform1f(shader.u_sdfgamma, gamma);
 
         } else if (image) {
-            var factor = tile.tileExtent / tile.tileSize / Math.pow(2, painter.transform.tileZoom - coord.z);
             gl.uniform1f(shader.u_ratio, ratio);
-            gl.uniform2fv(shader.u_pattern_size_a, [imagePosA.size[0] * factor * image.fromScale, imagePosB.size[1] ]);
-            gl.uniform2fv(shader.u_pattern_size_b, [imagePosB.size[0] * factor * image.toScale, imagePosB.size[1] ]);
+            gl.uniform2fv(shader.u_pattern_size_a, [
+                tile.pixelsToTileUnits(imagePosA.size[0] * image.fromScale, painter.transform.tileZoom),
+                imagePosB.size[1]
+            ]);
+            gl.uniform2fv(shader.u_pattern_size_b, [
+                tile.pixelsToTileUnits(imagePosB.size[0] * image.toScale, painter.transform.tileZoom),
+                imagePosB.size[1]
+            ]);
 
         } else {
             gl.uniform1f(shader.u_ratio, ratio);
         }
 
-        var vertex = tile.buffers.lineVertex;
+        var vertex = bucket.buffers.lineVertex;
         vertex.bind(gl);
-        var element = tile.buffers.lineElement;
+        var element = bucket.buffers.lineElement;
         element.bind(gl);
 
-        for (var i = 0; i < elementGroups.groups.length; i++) {
-            var group = elementGroups.groups[i];
+        for (var i = 0; i < elementGroups.length; i++) {
+            var group = elementGroups[i];
             var vtxOffset = group.vertexStartIndex * vertex.itemSize;
             gl.vertexAttribPointer(shader.a_pos, 2, gl.SHORT, false, 8, vtxOffset + 0);
-            gl.vertexAttribPointer(shader.a_data, 4, gl.BYTE, false, 8, vtxOffset + 4);
+            gl.vertexAttribPointer(shader.a_data, 4, gl.UNSIGNED_BYTE, false, 8, vtxOffset + 4);
 
             var count = group.elementLength * 3;
             var elementOffset = group.elementStartIndex * element.itemSize;

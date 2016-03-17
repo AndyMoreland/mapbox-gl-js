@@ -24,7 +24,6 @@ exports._loadTileJSON = function(options) {
 
         this._pyramid = new TilePyramid({
             tileSize: this.tileSize,
-            cacheSize: 20,
             minzoom: this.minzoom,
             maxzoom: this.maxzoom,
             roundZoom: this.roundZoom,
@@ -80,8 +79,8 @@ exports._vectorFeaturesAt = function(coord, params, callback) {
         uid: result.tile.uid,
         x: result.x,
         y: result.y,
-        tileExtent: result.tile.tileExtent,
         scale: result.scale,
+        tileSize: result.tileSize,
         source: this.id,
         params: params
     }, callback, result.tile.workerID);
@@ -120,7 +119,6 @@ exports._vectorFeaturesIn = function(bounds, params, callback) {
  * @param {Array} options.tiles An array of tile sources. If `url` is not specified, `tiles` can be used instead to specify tile sources, as in the TileJSON spec. Other TileJSON keys such as `minzoom` and `maxzoom` can be specified in a source object if `tiles` is used.
  * @param {string} options.id An optional `id` to assign to the source
  * @param {number} [options.tileSize=512] Optional tile size (width and height in pixels, assuming tiles are square). This option is only configurable for raster sources
- * @param {number} options.cacheSize Optional max number of tiles to cache at any given time
  * @example
  * var sourceObj = new mapboxgl.Source.create({
  *    type: 'vector',
@@ -139,11 +137,24 @@ exports.create = function(source) {
         image: require('./image_source')
     };
 
+    return exports.is(source) ? source : new sources[source.type](source);
+};
+
+exports.is = function(source) {
+    // This is not at file scope in order to avoid a circular require.
+    var sources = {
+        vector: require('./vector_tile_source'),
+        raster: require('./raster_tile_source'),
+        geojson: require('./geojson_source'),
+        video: require('./video_source'),
+        image: require('./image_source')
+    };
+
     for (var type in sources) {
         if (source instanceof sources[type]) {
-            return source;
+            return true;
         }
     }
 
-    return new sources[source.type](source);
+    return false;
 };
