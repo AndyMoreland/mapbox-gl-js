@@ -165,6 +165,10 @@ Tile.prototype = {
 function unserializeBuckets(input, style) {
     var output = {};
     for (var i = 0; i < input.length; i++) {
+        if (input[i].layerId && !style.getLayer(input[i].layerId)) {
+            continue;
+        }
+
         var bucket = Bucket.create(util.extend({
             childLayers: input[i].childLayerIds.map(style.getLayer.bind(style)),
             layer: style.getLayer(input[i].layerId)
