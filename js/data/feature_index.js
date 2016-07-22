@@ -148,11 +148,11 @@ FeatureIndex.prototype.query = function(args, styleLayers) {
         }
     }
 
-    var matching = Array.prototype.slice.call(this.grid.query(minX - additionalRadius, minY - additionalRadius, maxX + additionalRadius, maxY + additionalRadius));
+    var matching = this.grid.query(minX - additionalRadius, minY - additionalRadius, maxX + additionalRadius, maxY + additionalRadius);
     matching.sort(topDownFeatureComparator);
     this.filterMatching(result, matching, this.featureIndexArray, queryGeometry, filter, params.layers, styleLayers, args.bearing, pixelsToTileUnits);
 
-    var matchingSymbols = Array.prototype.slice.call(this.collisionTile.queryRenderedSymbols(minX, minY, maxX, maxY, args.scale));
+    var matchingSymbols = this.collisionTile.queryRenderedSymbols(minX, minY, maxX, maxY, args.scale);
     matchingSymbols.sort();
     this.filterMatching(result, matchingSymbols, this.collisionTile.collisionBoxArray, queryGeometry, filter, params.layers, styleLayers, args.bearing, pixelsToTileUnits);
 
