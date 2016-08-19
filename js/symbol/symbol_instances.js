@@ -20,10 +20,10 @@ var SymbolInstancesArray = module.exports = new StructArrayType({
         { type: 'Uint16', name: 'textBoxEndIndex' },
         { type: 'Uint16', name: 'iconBoxStartIndex' },
         { type: 'Uint16', name: 'iconBoxEndIndex' },
-        { type: 'Uint16', name: 'glyphQuadStartIndex' },
-        { type: 'Uint16', name: 'glyphQuadEndIndex' },
-        { type: 'Uint16', name: 'iconQuadStartIndex' },
-        { type: 'Uint16', name: 'iconQuadEndIndex' },
+        { type: 'Uint32', name: 'glyphQuadStartIndex' },
+        { type: 'Uint32', name: 'glyphQuadEndIndex' },
+        { type: 'Uint32', name: 'iconQuadStartIndex' },
+        { type: 'Uint32', name: 'iconQuadEndIndex' },
 
         // each symbolInstance is centered around the anchor point
         { type: 'Int16', name: 'anchorPointX' },
@@ -39,5 +39,3 @@ util.extendAll(SymbolInstancesArray.prototype.StructType.prototype, {
         return new Point(this.anchorPointX, this.anchorPointY);
     }
 });
-
-
