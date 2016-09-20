@@ -69,7 +69,7 @@ class StyleLayer extends Evented {
             delete this._layoutDeclarations[name];
         } else {
             const key = `layers.${this.id}.layout.${name}`;
-            if (this._validate(validateStyle.layoutProperty, key, name, value, options)) return;
+            // if (this._validate(validateStyle.layoutProperty, key, name, value, options)) return;
             this._layoutDeclarations[name] = new StyleDeclaration(this._layoutSpecifications[name], value);
         }
         this._updateLayoutValue(name);
@@ -103,7 +103,7 @@ class StyleLayer extends Evented {
             if (value === null || value === undefined) {
                 delete this._paintTransitionOptions[klass || ''][name];
             } else {
-                if (this._validate(validateStyle.paintProperty, validateStyleKey, name, value, options)) return;
+                // if (this._validate(validateStyle.paintProperty, validateStyleKey, name, value, options)) return;
                 this._paintTransitionOptions[klass || ''][name] = value;
             }
         } else {
@@ -113,7 +113,7 @@ class StyleLayer extends Evented {
             if (value === null || value === undefined) {
                 delete this._paintDeclarations[klass || ''][name];
             } else {
-                if (this._validate(validateStyle.paintProperty, validateStyleKey, name, value, options)) return;
+                // if (this._validate(validateStyle.paintProperty, validateStyleKey, name, value, options)) return;
                 this._paintDeclarations[klass || ''][name] = new StyleDeclaration(this._paintSpecifications[name], value);
             }
         }
