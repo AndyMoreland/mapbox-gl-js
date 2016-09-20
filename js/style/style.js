@@ -332,7 +332,7 @@ class Style extends Evented {
 
         const builtIns = ['vector', 'raster', 'geojson', 'video', 'image'];
         const shouldValidate = builtIns.indexOf(source.type) >= 0;
-        if (shouldValidate && this._validate(validateStyle.source, `sources.${id}`, source, null, options)) return this;
+//        if (shouldValidate && this._validate(validateStyle.source, `sources.${id}`, source, null, options)) return this;
 
         source = new SourceCache(id, source, this.dispatcher);
         this.sourceCaches[id] = source;
@@ -393,12 +393,12 @@ class Style extends Evented {
 
         if (!(layer instanceof StyleLayer)) {
             // this layer is not in the style.layers array, so we pass an impossible array index
-            if (this._validate(validateStyle.layer,
-                    `layers.${layer.id}`, layer, {arrayIndex: -1}, options)) return this;
+            // if (this._validate(validateStyle.layer,
+            //         `layers.${layer.id}`, layer, {arrayIndex: -1}, options)) return this;
 
             layer = StyleLayer.create(layer);
         }
-        this._validateLayer(layer);
+        // this._validateLayer(layer);
 
         layer.setEventedParent(this, {layer: {id: layer.id}});
 
@@ -473,7 +473,7 @@ class Style extends Evented {
 
         const layer = this.getLayer(layerId);
 
-        if (filter !== null && this._validate(validateStyle.filter, `layers.${layer.id}.filter`, filter)) return this;
+        // if (filter !== null && this._validate(validateStyle.filter, `layers.${layer.id}.filter`, filter)) return this;
 
         if (util.deepEqual(layer.filter, filter)) return this;
         layer.filter = util.clone(filter);
@@ -601,7 +601,7 @@ class Style extends Evented {
 
     queryRenderedFeatures(queryGeometry, params, zoom, bearing) {
         if (params && params.filter) {
-            this._validate(validateStyle.filter, 'queryRenderedFeatures.filter', params.filter);
+            // this._validate(validateStyle.filter, 'queryRenderedFeatures.filter', params.filter);
         }
 
         const includedSources = {};
@@ -629,7 +629,7 @@ class Style extends Evented {
 
     querySourceFeatures(sourceID, params) {
         if (params && params.filter) {
-            this._validate(validateStyle.filter, 'querySourceFeatures.filter', params.filter);
+            // this._validate(validateStyle.filter, 'querySourceFeatures.filter', params.filter);
         }
         const sourceCache = this.sourceCaches[sourceID];
         return sourceCache ? QueryFeatures.source(sourceCache, params) : [];
