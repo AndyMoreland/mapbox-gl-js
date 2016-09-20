@@ -237,9 +237,12 @@ FeatureIndex.prototype.filterMatching = function(result, matching, array, queryG
             }
 
             var geojsonFeature = new GeoJSONFeature(feature, this.z, this.x, this.y);
-            geojsonFeature.layer = styleLayer.serialize({
-                includeRefProperties: true
-            });
+            geojsonFeature.layer = {
+                paint: {
+                    "circle-radius": styleLayer.paint && styleLayer.paint["circle-radius"]
+                }
+            };
+
             var layerResult = result[layerID];
             if (layerResult === undefined) {
                 layerResult = result[layerID] = [];
