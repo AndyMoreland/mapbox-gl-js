@@ -223,7 +223,15 @@ class FeatureIndex {
                 }
 
                 const geojsonFeature = new GeoJSONFeature(feature, this.z, this.x, this.y);
-                geojsonFeature.layer = styleLayer.serialize();
+                geojsonFeature.layer =  {
+                    id: styleLayer.id,
+                    type: styleLayer.type,
+                    metadata: styleLayer.metadata,
+                    paint: {
+                        "circle-radius": styleLayer.paint && styleLayer.paint["circle-radius"]
+                    }
+                };
+
                 let layerResult = result[layerID];
                 if (layerResult === undefined) {
                     layerResult = result[layerID] = [];
