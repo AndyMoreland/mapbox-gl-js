@@ -17,6 +17,8 @@ mapboxgl.FullscreenControl = require('./ui/control/fullscreen_control');
 mapboxgl.Popup = require('./ui/popup');
 mapboxgl.Marker = require('./ui/marker');
 
+mapboxgl.Transform = require('./geo/transform');
+
 mapboxgl.Style = require('./style/style');
 
 mapboxgl.LngLat = require('./geo/lng_lat');
