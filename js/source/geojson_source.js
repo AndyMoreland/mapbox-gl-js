@@ -193,7 +193,6 @@ class GeoJSONSource extends Evented {
             }
 
             return callback(null);
-
         }, this.workerID);
     }
 
@@ -205,6 +204,10 @@ class GeoJSONSource extends Evented {
         tile.unloadVectorData();
         this.dispatcher.send('removeTile', { uid: tile.uid, type: this.type, source: this.id }, () => {}, tile.workerID);
     }
+
+    onRemove(map) {
+        this.dispatcher.broadcast('remove source', { type: this.type, source: this.id }, function() {});
+    },
 
     serialize() {
         return {

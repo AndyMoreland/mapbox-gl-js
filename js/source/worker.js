@@ -66,6 +66,14 @@ class Worker {
         this.getWorkerSource(mapId, params.type).redoPlacement(params, callback);
     }
 
+    'remove source': function (mapId, params) {
+        var type = params.type || 'vector';
+        const worker = this.getWorkerSource(mapId, params.type);
+        if (worker.removeSource !== undefined) {
+            worker.removeSource(params);
+        }
+    },
+
     /**
      * Load a {@link WorkerSource} script at params.url.  The script is run
      * (using importScripts) with `registerWorkerSource` in scope, which is a
