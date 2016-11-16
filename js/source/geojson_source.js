@@ -206,8 +206,8 @@ class GeoJSONSource extends Evented {
     }
 
     onRemove(map) {
-        this.dispatcher.broadcast('remove source', { type: this.type, source: this.id }, function() {});
-    },
+        this.dispatcher.broadcast('removeSource', { type: this.type, source: this.id }, function() {});
+    }
 
     serialize() {
         return {
