@@ -16,46 +16,74 @@ class SpritePosition {
     }
 }
 
+function premultiply(imgData) {
+    for (let i = 0; i < imgData.length; i += 4) {
+        const alpha = imgData[i + 3] / 255;
+        imgData[i + 0] *= alpha;
+        imgData[i + 1] *= alpha;
+        imgData[i + 2] *= alpha;
+    }
+
+    return imgData;
+}
+
 class ImageSprite extends Evented {
 
-    constructor(base, eventedParent) {
+    constructor(baseUrlOrJson, eventedParent) {
         super();
-        this.base = base;
+        this.base = baseUrlOrJson;
         this.retina = browser.devicePixelRatio > 1;
         this.setEventedParent(eventedParent);
 
         const format = this.retina ? '@2x' : '';
 
-        ajax.getJSON(normalizeURL(base, format, '.json'), (err, data) => {
-            if (err) {
-                this.fire('error', {error: err});
-                return;
-            }
+        if (baseUrlOrJson.charAt(0) !== "{") {
+            this.loadRemote(baseUrlOrJson, format);
+        } else {
+            this.loadLocal(baseUrlOrJson);
+        }
+    }
 
+    loadLocal(json) {
+        const parsedBase = JSON.parse(json);
+        this.data = parsedBase.data;
+
+        const img = new Image();
+        img.getData = function() {
+            var canvas = document.createElement('canvas');
+            var context = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            context.drawImage(img, 0, 0);
+            return context.getImageData(0, 0, img.width, img.height).data;
+        };
+
+        img.onload = (function() {
+            this.finalizeLoadImage(null, img);
+        }).bind(this);
+
+        img.src = parsedBase.url;
+    }
+
+    loadRemote(baseUrl, format) {
+        ajax.getJSON(normalizeURL(baseUrl, format, '.json'), (err, data) => {
             this.data = data;
             if (this.imgData) this.fire('data', {dataType: 'style'});
         });
 
-        ajax.getImage(normalizeURL(base, format, '.png'), (err, img) => {
-            if (err) {
-                this.fire('error', {error: err});
-                return;
-            }
+        ajax.getImage(normalizeURL(baseUrl, format, '.png'), this.finalizeLoadImage.bind(this));
+    }
 
-            this.imgData = browser.getImageData(img);
+    finalizeLoadImage(err, img) {
+        if (err) {
+            this.fire('error', {error: err});
+            return;
+        }
 
-            // premultiply the sprite
-            for (let i = 0; i < this.imgData.length; i += 4) {
-                const alpha = this.imgData[i + 3] / 255;
-                this.imgData[i + 0] *= alpha;
-                this.imgData[i + 1] *= alpha;
-                this.imgData[i + 2] *= alpha;
-            }
+        this.imgData = premultiply(browser.getImageData(img));
+        this.width = img.width;
 
-            this.width = img.width;
-
-            if (this.data) this.fire('data', {dataType: 'style'});
-        });
+        if (this.data) this.fire('data', { dataType: 'style' });
     }
 
     toJSON() {
