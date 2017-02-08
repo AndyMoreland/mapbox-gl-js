@@ -9,6 +9,11 @@ const Coordinate = require('../geo/coordinate');
 const util = require('../util/util');
 const EXTENT = require('../data/extent');
 
+
+function clampToMaxTimeout(timeoutValue) {
+    return Math.min(timeoutValue, Math.pow(2, 31) - 1);
+}
+
 /**
  * `SourceCache` is responsible for
  *
@@ -438,7 +443,7 @@ class SourceCache extends Evented {
             this._timers[id] = setTimeout(() => {
                 this.reloadTile(id, 'expired');
                 this._timers[id] = undefined;
-            }, tileExpires - new Date().getTime());
+            }, clampToMaxTimeout(tileExpires - new Date().getTime()));
         }
     }
 
@@ -448,7 +453,7 @@ class SourceCache extends Evented {
             this._cacheTimers[id] = setTimeout(() => {
                 this._cache.remove(id);
                 this._cacheTimers[id] = undefined;
-            }, tileExpires - new Date().getTime());
+            }, clampToMaxTimeout(tileExpires - new Date().getTime()));
         }
     }
 
