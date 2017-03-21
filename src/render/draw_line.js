@@ -115,6 +115,7 @@ function drawLineTile(program, painter, tile, buffers, layer, coord, layerData, 
     gl.uniformMatrix4fv(program.u_matrix, false, posMatrix);
 
     gl.uniform1f(program.u_ratio, 1 / pixelsToTileUnits(tile, 1, painter.transform.zoom));
+    gl.uniform1f(program.u_linesofar_offset, 200);
 
     for (const segment of buffers.segments) {
         segment.vaos[layer.id].bind(gl, program, buffers.layoutVertexBuffer, buffers.elementBuffer, layerData.paintVertexBuffer, segment.vertexOffset);
