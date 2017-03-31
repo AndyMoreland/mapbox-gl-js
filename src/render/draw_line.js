@@ -15,6 +15,7 @@ const pixelsToTileUnits = require('../source/pixels_to_tile_units');
  */
 module.exports = function drawLine(painter, sourceCache, layer, coords) {
     if (painter.isOpaquePass) return;
+    console.log("Draw Line");
     painter.setDepthSublayer(0);
     painter.depthMask(false);
 
@@ -25,14 +26,16 @@ module.exports = function drawLine(painter, sourceCache, layer, coords) {
     if (layer.paint['line-width'] <= 0) return;
 
     const programId =
-        layer.paint['line-dasharray'] ? 'lineSDF' :
-        layer.paint['line-pattern'] ? 'linePattern' : 'line';
+          layer.paint['line-dasharray'] ? 'lineSDF' :
+          layer.paint['line-pattern'] ? 'linePattern' : 'line';
 
     let prevTileZoom;
     let firstTile = true;
 
+
     for (const coord of coords) {
         const tile = sourceCache.getTile(coord);
+        // console.log("Coords: ", coord, tile.uid);
         const bucket = tile.getBucket(layer);
         if (!bucket) continue;
 
@@ -115,10 +118,15 @@ function drawLineTile(program, painter, tile, buffers, layer, coord, layerData, 
     gl.uniformMatrix4fv(program.u_matrix, false, posMatrix);
 
     gl.uniform1f(program.u_ratio, 1 / pixelsToTileUnits(tile, 1, painter.transform.zoom));
-    gl.uniform1f(program.u_linesofar_offset, 200);
+
+    if (layer.id === "lines") {
+        console.log(tile.coord, tile.uid, buffers.segments.length);
+        // debugger;
+    }
 
     for (const segment of buffers.segments) {
+        console.log("Segment primitive length: ", segment.primitiveLength);
         segment.vaos[layer.id].bind(gl, program, buffers.layoutVertexBuffer, buffers.elementBuffer, layerData.paintVertexBuffer, segment.vertexOffset);
-        gl.drawElements(gl.TRIANGLES, segment.primitiveLength * 3, gl.UNSIGNED_SHORT, segment.primitiveOffset * 3 * 2);
+        gl.drawElements(gl.TRIANGLES, Math.min(segment.primitiveLength, 4) * 3, gl.UNSIGNED_SHORT, segment.primitiveOffset * 3 * 2);
     }
 }

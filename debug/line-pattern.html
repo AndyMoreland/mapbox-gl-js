@@ -18,11 +18,26 @@
 <script src='/debug/access_token_generated.js'></script>
 <script>
 
+    var simple = {
+        "version": 8,
+        "sources": {},
+        "layers": [
+            {
+                "id": "background",
+                "type": "background",
+                "paint": {
+                    "background-color": "#41afa5"
+                }
+            }
+        ]
+    };
+
+
 var map = window.map = new mapboxgl.Map({
     container: 'map',
     zoom: 12.5,
     center: [-77.01866, 38.888],
-    style: 'mapbox://styles/mapbox/streets-v9',
+        style: simple,
     hash: true
 });
 
@@ -48,7 +63,15 @@ map.on('load', function() {
         "source": "lines",
         "paint": {
             "line-pattern": "front",
-            "line-width": 32
+            "line-width": 32,
+            "line-opacity": {
+                "property": "break-on-me",
+                "type": "categorical",
+                "stops": [
+                    ["true", 1.0],
+                    ["false", 0.5]
+                ]
+            }
         }
     });
 });

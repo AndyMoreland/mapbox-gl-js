@@ -97,6 +97,11 @@ class LineBucket extends Bucket {
         const featureProperties = feature.properties;
         const isPolygon = VectorTileFeature.types[feature.type] === 'Polygon';
 
+        if (featureProperties && featureProperties["break-on-me"] != null) {
+            // console.log(vertices[0], vertices[1]);
+            // debugger;
+        }
+
         // If the line has duplicate vertices at the end, adjust length to remove them.
         let len = vertices.length;
         while (len >= 2 && vertices[len - 1].equals(vertices[len - 2])) {

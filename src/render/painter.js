@@ -210,10 +210,12 @@ class Painter {
 
         this.depthRange = (style._order.length + 2) * this.numSublayers * this.depthEpsilon;
 
+        console.groupCollapsed()
         this.isOpaquePass = true;
         this.renderPass();
         this.isOpaquePass = false;
         this.renderPass();
+        console.groupEnd();
 
         if (this.options.showTileBoundaries) {
             const sourceCache = this.style.sourceCaches[Object.keys(this.style.sourceCaches)[0]];

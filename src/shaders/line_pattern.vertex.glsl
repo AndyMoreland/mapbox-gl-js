@@ -16,12 +16,12 @@
 
 attribute vec2 a_pos;
 attribute vec4 a_data;
+attribute vec3 a_bary;
 
 uniform mat4 u_matrix;
 uniform mediump float u_ratio;
 uniform mediump float u_width;
 uniform vec2 u_gl_units_to_pixels;
-uniform float u_linesofar_offset;
 
 varying vec2 v_normal;
 varying vec2 v_width2;
@@ -41,7 +41,7 @@ void main() {
 
     vec2 a_extrude = a_data.xy - 128.0;
     float a_direction = mod(a_data.z, 4.0) - 1.0;
-    float a_linesofar = u_linesofar_offset + (floor(a_data.z / 4.0) + a_data.w * 64.0) * LINE_DISTANCE_SCALE;
+    float a_linesofar = (floor(a_data.z / 4.0) + a_data.w * 64.0) * LINE_DISTANCE_SCALE;
 
     // We store the texture normals in the most insignificant bit
     // transform y so that 0 => -1 and 1 => 1
